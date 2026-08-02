@@ -1,0 +1,14 @@
+.git
+work
+files
+photos
+service-python/.venv
+backend-laravel/vendor
+backend-laravel/node_modules
+backend-laravel/storage/logs
+backend-laravel/storage/framework/cache
+backend-laravel/storage/framework/sessions
+backend-laravel/storage/framework/views
+backend-laravel/database/database.sqlite
+**/__pycache__
+**/*.pyc

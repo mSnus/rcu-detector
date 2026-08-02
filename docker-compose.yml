@@ -1,0 +1,108 @@
+services:
+  rcu-service:
+    build: ./service-python
+    restart: unless-stopped
+    environment:
+      RCU_SERVICE_HOST: 0.0.0.0
+      RCU_INTERNAL_TOKEN: ${RCU_INTERNAL_TOKEN:?set RCU_INTERNAL_TOKEN in .env}
+      RCU_INDEX_PATH: /data/work/index/tokens.npz
+      RCU_FP_DIR: /data/work/fp
+      RCU_WATERMARK_FILTER: ${RCU_WATERMARK_FILTER:-1}
+      RCU_WATERMARK_TERMS: ${RCU_WATERMARK_TERMS:-PULTOVNET}
+    volumes:
+      - ./work:/data/work
+      - ${RCU_FILES_DIR:-./files}:/data/files:ro
+    # No ports: the service is reachable only on the internal network. It has
+    # no TLS and its shared-secret header is not a substitute for that.
+    networks: [internal]
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8600/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+
+  laravel:
+    build: ./backend-laravel
+    restart: unless-stopped
+    depends_on:
+      mysql: {condition: service_healthy}
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      APP_KEY: ${APP_KEY:?run `php artisan key:generate --show` and set APP_KEY}
+      APP_DEBUG: ${APP_DEBUG:-false}
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_DATABASE: ${DB_DATABASE:-rcu}
+      DB_USERNAME: ${DB_USERNAME:-rcu}
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      LEGACY_DB_HOST: ${LEGACY_DB_HOST:-mysql}
+      LEGACY_DB_DATABASE: ${LEGACY_DB_DATABASE:-rcud}
+      LEGACY_DB_USERNAME: ${LEGACY_DB_USERNAME:-}
+      LEGACY_DB_PASSWORD: ${LEGACY_DB_PASSWORD:-}
+      RCU_SERVICE_URL: http://rcu-service:8600
+      RCU_SERVICE_TOKEN: ${RCU_INTERNAL_TOKEN}
+      RCU_LEGACY_FILES: /data/files
+      RCU_ITEM_URL: ${RCU_ITEM_URL:-https://pultov.net/item/{id}}
+      RCU_FP_DIR: /data/work/fp
+      RCU_NORM_DIR: /data/work/norm
+      RCU_DEBUG_DIR: /data/work/debug
+    volumes:
+      - ./work:/data/work:ro
+      - ${RCU_FILES_DIR:-./files}:/data/files:ro
+      - laravel-storage:/srv/app/storage
+    networks: [internal]
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on: [laravel]
+    ports:
+      - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8080}:80"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./backend-laravel/public:/srv/app/public:ro
+    networks: [internal]
+
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-rcu}
+      MYSQL_USER: ${DB_USERNAME:-rcu}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD in .env}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Batch catalog build. Not a service -- `--profile build` keeps it out of
+  # `up`. One image per process: a directory run in one process is OOM-killed,
+  # and peak RSS is ~700 MB on a 5 MP image.
+  #   docker compose --profile build run --rm extract
+  extract:
+    build: ./service-python
+    profiles: [build]
+    environment:
+      RCU_WATERMARK_FILTER: ${RCU_WATERMARK_FILTER:-1}
+      RCU_WATERMARK_TERMS: ${RCU_WATERMARK_TERMS:-PULTOVNET}
+    volumes:
+      - ./work:/data/work
+      - ${RCU_FILES_DIR:-./files}:/data/files:ro
+      - ./docker/build-catalog.sh:/usr/local/bin/build-catalog:ro
+    networks: [internal]
+    mem_limit: 2g
+    entrypoint: ["build-catalog"]
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  laravel-storage:

@@ -600,6 +600,17 @@ def _apply_env_overrides(cfg: Config) -> None:
             "0", "false", "no", "off", "",
         }
 
+    # Containers must bind the service interface, not loopback. Only ever set
+    # this where the port is unpublished and the network is internal -- the
+    # auth header is a shared secret, not a substitute for not being reachable.
+    host = os.environ.get("RCU_SERVICE_HOST")
+    if host:
+        cfg.service.host = host
+
+    port = os.environ.get("RCU_SERVICE_PORT")
+    if port and port.isdigit():
+        cfg.service.port = int(port)
+
     terms = os.environ.get("RCU_WATERMARK_TERMS")
     if terms is not None:
         cleaned = tuple(
