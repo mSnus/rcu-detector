@@ -1,0 +1,178 @@
+# Known brands appearing on TV / AV remote controls.
+#
+# Used by pipeline/branding.py as the fuzzy-match target list. Blank lines and
+# lines starting with # are ignored; matching is case-insensitive.
+#
+# Two populations are represented deliberately:
+#   - OEM brands printed on the remote that shipped with the device
+#   - universal-remote makers (Huayu, ClickPdu, One For All, ...), which are a
+#     large share of a scraped catalog and are easy to forget
+#
+# Add to this file rather than to the code. A brand missing here is not an
+# error: unmatched wordmarks are stored as unverified candidates.
+
+# --- major TV / AV ---
+Samsung
+LG
+Sony
+Panasonic
+Philips
+Toshiba
+Sharp
+Hitachi
+JVC
+Pioneer
+Onkyo
+Yamaha
+Denon
+Marantz
+Harman Kardon
+Bose
+Sanyo
+Sansui
+Akai
+Aiwa
+Grundig
+Loewe
+Metz
+Bang & Olufsen
+Bush
+Beko
+Vestel
+Arcelik
+Telefunken
+Thomson
+Blaupunkt
+Nordmende
+Saba
+Schneider
+Orion
+Funai
+Daewoo
+Changhong
+Hisense
+TCL
+Skyworth
+Konka
+Haier
+Xiaomi
+Realme
+OnePlus
+Nokia
+Motorola
+Huawei
+Honor
+Vizio
+Insignia
+Element
+Sceptre
+Westinghouse
+RCA
+Zenith
+Magnavox
+Emerson
+Polaroid
+Kogan
+Soniq
+Hyundai
+Erisson
+Fusion
+Shivaki
+Novex
+Doffler
+Leff
+Yuno
+Centek
+Starwind
+Digma
+Irbis
+Dexp
+Econ
+Harper
+Mystery
+Rolsen
+Ginzzu
+Prestigio
+Supra
+Vekta
+Telefunken
+Horizont
+Витязь
+Vityaz
+
+# --- projectors / set-top / streaming ---
+InFocus
+Epson
+BenQ
+Optoma
+ViewSonic
+Acer
+Vivitek
+Casio
+NEC
+Christie
+Barco
+Roku
+Amazon
+Apple
+Google
+Nvidia
+Humax
+Technicolor
+Arris
+Cisco
+Scientific Atlanta
+Pace
+Sagemcom
+Kaon
+Openbox
+Tricolor
+NTV Plus
+Rostelecom
+Beeline
+MTS
+Wink
+Selenga
+World Vision
+Lumax
+Oriel
+BBK
+Cadena
+Divisat
+Telecarta
+
+# --- audio / other appliances that ship remotes ---
+Bosch
+Siemens
+Electrolux
+Whirlpool
+Candy
+Indesit
+Ariston
+Midea
+Gree
+Ballu
+Electrolux
+Honeywell
+Zanussi
+Dyson
+Xiaomi Mijia
+
+# --- universal remote makers ---
+Huayu
+ClickPdu
+One For All
+Chunghop
+Vivanco
+Hama
+Thomson ROC
+Logitech Harmony
+GE Universal
+RCA Universal
+Philips SRP
+Sven
+Rexant
+Universal
+Kumo
+Kaisar
+Doffler Universal

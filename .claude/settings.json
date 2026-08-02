@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -sS -m 30 -A \"Mozilla/5.0 (compatible; rcu-pipeline-test)\" https://pultov.net/*)",
+      "Bash(curl -sS -m 25 -A \"Mozilla/5.0 (compatible; rcu-pipeline-test)\" https://pultov.net/*)",
+      "Bash(curl -sS -m 20 -A \"Mozilla/5.0 (compatible; rcu-pipeline-test)\" https://pultov.net/*)",
+      "Bash(rm -rf /tmp/claude-1001/-var-www-msnus-data-rcu-detector/*)",
+      "Bash(pkill -f app.main)",
+      "Bash(pkill -f \"app.main\")",
+      "Bash(pkill -f uvicorn)",
+      "Bash(pkill -f \"artisan serve\")",
+      "Bash(curl -s http://127.0.0.1:*)",
+      "Bash(php artisan test)",
+      "Bash(php artisan test *)"
+    ]
+  }
+}

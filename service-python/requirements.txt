@@ -1,0 +1,33 @@
+numpy==1.26.4
+scipy==1.13.1
+opencv-python-headless==4.10.0.84
+Pillow==10.4.0
+
+# OCR. RapidOCR runs the PP-OCR detection/recognition models under
+# onnxruntime: the same model family as PaddleOCR at ~150 MB rather than
+# ~1 GB, which is what fits this box. The engine is swappable behind
+# app/pipeline/ocr.py -- see OCR_EXTRA in install.sh to add paddle/easyocr/
+# doctr/tesseract for engine consensus on a larger machine.
+#
+# rapidocr-onnxruntime is installed --no-deps by install.sh: its dependency
+# list pulls opencv-python (the full build, needs libGL) which shadows the
+# headless build pinned above. Its real runtime deps are listed out here.
+rapidocr-onnxruntime==1.3.24
+onnxruntime==1.23.2
+pyclipper==1.3.0.post6
+Shapely==2.0.5
+PyYAML==6.0.2
+six==1.16.0
+
+# brand fuzzy-matching
+rapidfuzz==3.9.7
+
+# service. Bound to 127.0.0.1 behind Laravel, so a single uvicorn worker with
+# no reload machinery; the index is loaded once into module state and workers
+# would each hold their own copy of it.
+fastapi==0.115.0
+uvicorn==0.30.6
+python-multipart==0.0.9
+
+# batch build
+tqdm==4.66.5

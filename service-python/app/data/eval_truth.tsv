@@ -1,0 +1,46 @@
+# Ground truth for scripts/match_eval.py over the 18 sample images.
+#
+# <fingerprint stem>	<remote identity, or BAD>
+#
+# Written by LOOKING AT EVERY OVERLAY, not by parsing the filenames. Inferring
+# truth from stems gets this wrong in both directions and quietly reports the
+# matcher as broken when it is not:
+#
+#   - Two bodies from one image are usually the same remote photographed
+#     twice (GINZZU_GM-501) or the bare remote plus the same remote inside its
+#     blister pack (MR-18B_0) -- but not always.
+#   - Two images can be the same remote under different names and different
+#     OCR'd codes: Sony_RM-PJ20_big reads RM-PJ20R, RM-PJ20_big_light reads
+#     RM-PJ20. Same remote.
+#
+# BAD marks an extraction that is not a remote at all. These are excluded from
+# recall rather than counted as failures -- they are extraction bugs already
+# on the session-3 list, and scoring the matcher on them measures the wrong
+# thing. Both are flagged severity 3 by scripts/audit_catalog.py.
+
+AIWA_PAS-Y600_0	aiwa-pas-y600
+ClickPdu_RM-D1110_Philips_TV_1_0	clickpdu-rm-d1110
+DVD_80_0	dvd-80
+GINZZU_GM-501_0	ginzzu-gm-501
+GINZZU_GM-501_1	ginzzu-gm-501
+HONEYWELL_HE5500_0	honeywell-he5500
+Huayu_Motorola_Cisco_15_0	huayu-motorola-cisco-15
+# the body detector latched onto the HAND holding the remote: the rectified
+# crop is a strip of fingernails, 2 buttons, 8.2% of the image
+Huayu_RM-530F_JVC_TV_7_0	BAD
+Huayu_RM-530F_JVC_TV_7_1	huayu-rm-530f
+MR-18B_0_0	mr-18b
+MR-18B_0_1	mr-18b
+ONKYO_RC-371M_0	onkyo-rc-371m
+Prestigio_KF-7777A_0	prestigio-kf-7777a
+# extracted the red "RM-L859" packaging label strip, not either remote
+RM-L859-1_0	BAD
+# same remote as Sony_RM-PJ20_big_0, and stored UPSIDE DOWN despite
+# orientation_conf 1.0 -- see the note on IndexConfig.index_both_orientations
+RM-PJ20_big_light_0	sony-rm-pj20
+ROLSEN_RSF-3106RT_0	rolsen-rsf-3106rt
+ROLSEN_RSF-3106RT_0_0	rolsen-rsf-3106rt
+SMART_TV_T96_0	smart-tv-t96
+Sony_RM-PJ20_big_0	sony-rm-pj20
+URC-177500_Wink_0	urc-177500-wink
+YDX-107_-_2_0_0	ydx-107

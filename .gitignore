@@ -1,0 +1,31 @@
+# Python
+service-python/.venv/
+__pycache__/
+*.py[cod]
+
+# Build artefacts: regenerate with scripts/extract_one.py + build_index.py
+work/
+
+# Catalogue photo files, supplied per-deployment. Not source.
+files/
+
+# Contains a real database password in auto-added permission rules.
+.claude/settings.local.json
+
+# Historical sample output from session 1; the write-up itself is kept.
+rcu-session-01/sample-output/
+
+.DS_Store
+*.log
+*.jsonl
+
+# No binaries in the repo. Sample photos are supplied per-deployment;
+# every script that needs them takes a --photos/--dir path.
+photos/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.ico
+*.npz
+*.sqlite
