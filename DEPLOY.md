@@ -66,15 +66,37 @@ docker compose exec laravel php -r 'echo file_get_contents("http://rcu-service:8
 If the legacy catalogue lives on the Docker host rather than in this stack,
 `LEGACY_DB_HOST=host.docker.internal` reaches it, but MySQL will refuse the
 connection: containers arrive from the bridge subnet, and a grant issued to
-`'user'@'localhost'` does not cover them.
+`'user'@'localhost'` does not cover them. The symptom is
+`Host '172.28.0.x' is not allowed to connect` — an authentication refusal, not
+a connection failure, so `bind-address` is usually already correct.
 
 ```sql
-CREATE USER 'rcud_usr'@'172.20.0.%' IDENTIFIED BY '...';
-GRANT SELECT ON rcud.* TO 'rcud_usr'@'172.20.0.%';
+CREATE USER 'rcud_usr'@'172.28.%' IDENTIFIED BY '...';
+GRANT SELECT ON rcud.* TO 'rcud_usr'@'172.28.%';
+FLUSH PRIVILEGES;
 ```
 
 `SELECT` only. Nothing in this project writes to the legacy schema, and a
 migration pointed at that connection would be destructive.
+
+The `internal` network pins `172.28.0.0/16` deliberately. Compose otherwise
+allocates from the shared 172.17-172.31 pool in creation order, so a stack
+recreated while another project holds the range moves to a different subnet
+and a grant written against the old one fails silently. Change the subnet and
+the grant together, or neither.
+
+## Host log growth
+
+Two things on a Docker host grow without limit unless configured, and both
+will fill a disk long before the application does:
+
+- container logs — set `log-opts` `max-size`/`max-file` in
+  `/etc/docker/daemon.json`; the default `json-file` driver has no cap, and
+  the setting only applies to containers created after `systemctl restart
+  docker`;
+- systemd's journal defaults to `min(10% of /var, 4G)`, which is a cap rather
+  than a target: it fills to it and stays there. Set `SystemMaxUse` in
+  `/etc/systemd/journald.conf` if that is more history than you want.
 
 ## Memory
 

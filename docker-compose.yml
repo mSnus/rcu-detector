@@ -104,6 +104,13 @@ services:
 networks:
   internal:
     driver: bridge
+    # Pinned so a database grant issued to this subnet cannot silently break.
+    # Compose otherwise allocates from the shared 172.17-172.31 pool in
+    # creation order, and the stack can move if another project claims the
+    # range while this one is down.
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
 
 volumes:
   mysql-data:
