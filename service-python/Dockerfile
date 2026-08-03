@@ -1,8 +1,13 @@
 FROM python:3.10-slim-bookworm
 
+# HOME is /tmp rather than a user's home directory on purpose: this image is
+# meant to run under whatever uid the host needs (see `user:` in
+# docker-compose.yml), and that uid will not own /home/anything. Anything that
+# wants a home directory gets a writable one regardless of who is running.
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    OMP_NUM_THREADS=1
+    OMP_NUM_THREADS=1 \
+    HOME=/tmp
 
 # opencv-python-headless still needs libgl/libglib at runtime.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -30,5 +35,15 @@ EXPOSE 8600
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8600/health || exit 1
+
+# Never root. The build writes fingerprints, overlays and the token index into
+# a bind-mounted host directory, and root-owned build artefacts are a nuisance
+# the host cannot clear without another container.
+#
+# 1000 is only a default; nothing here depends on it. Compose overrides it with
+# the uid that owns work/ on the host -- see RCU_UID in .env.example. The
+# models and code are world-readable, so any uid works.
+RUN useradd --create-home --uid 1000 rcu
+USER rcu
 
 CMD ["python", "-m", "app.main"]

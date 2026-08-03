@@ -56,6 +56,24 @@ purpose: on a fresh clone the required variables are not yet set, so
 wants 32 random bytes base64-encoded, which is exactly what the line above
 produces.
 
+Set the uid the CV containers run as, to whoever will own `work/`:
+
+```bash
+echo "RCU_UID=$(id -u)"
+echo "RCU_GID=$(id -g)"
+```
+
+Neither container runs as root. The catalog build writes fingerprints,
+overlays and the token index straight into the bind-mounted `work/`, so if it
+runs as root every one of those comes out root-owned and clearing your own
+build output needs another container. The image defaults to uid 1000 and
+depends on the value in no other way; the models and code are world-readable,
+so any uid works.
+
+`rcu-service` runs as the same uid and mounts `work/` **read-only** — nothing
+in the service writes there. Only `scripts/build_index.py` does, and that runs
+in the `extract` container.
+
 Then set the paths:
 
 | variable | meaning |
@@ -240,6 +258,14 @@ docker compose exec laravel php artisan migrate --force
 
 Rebuild the catalog only if extraction changed; a schema change does not
 invalidate fingerprints.
+
+Upgrading a stack that predates `RCU_UID`: set it, then take ownership of what
+the old root-running containers left behind, which needs a container precisely
+because it is root-owned.
+
+```bash
+docker run --rm -v "$PWD/work:/w" alpine:3.20 chown -R "$(id -u):$(id -g)" /w
+```
 
 ---
 

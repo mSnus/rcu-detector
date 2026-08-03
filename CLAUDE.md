@@ -302,6 +302,12 @@ These caused real bugs. Do not reintroduce them.
   diagnostics on stderr. `getErrorStyle()` silently falls back to stdout when
   there is no real console, so `$this->artisan()` cannot assert that split —
   verify it against the container.
+- A container that writes into a bind mount must run as the **host uid that
+  owns it** (`RCU_UID`/`RCU_GID`), or every fingerprint, overlay and index it
+  produces is root-owned and the host needs another container to delete its
+  own build output. Only `extract` writes to `work/`; `rcu-service` mounts it
+  read-only, because the only writer in the Python tree is
+  `scripts/build_index.py`.
 - **`docker compose exec` runs the image, not the checkout.** A measurement
   taken against a stale container is a measurement of old code: the first run
   of the legacy import here reported 165 of 165 unmatched, which was the
