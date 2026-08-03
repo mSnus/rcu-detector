@@ -1,15 +1,22 @@
 #!/usr/bin/env bash
-# Build the catalog: extract every photo, then build the token index.
+# Build the catalog: extract the product photos, then build the token index.
 #
 # One image per process. Looping extract_remotes inside a single process gets
 # OOM-killed; peak RSS is ~700 MB on a 5 MP image at the default OCR upscale.
 #
-#   docker compose --profile build run --rm extract
-#   docker compose --profile build run --rm extract --jobs 4
+#   docker compose exec laravel php artisan rcu:legacy-manifest --out=/data/work/primary.txt
+#   docker compose --profile build run --rm extract --manifest /data/work/primary.txt --jobs 4
+#
+# Without --manifest every file in $PHOTOS is extracted. That is right for a
+# directory of remotes and wrong for the legacy `files/` directory, a third of
+# which is replacement-model promos and instruction sheets hung off the same
+# products at delta >= 1. Only the database knows which is which, and this
+# container has no database -- hence the manifest.
 set -euo pipefail
 
 PHOTOS=${PHOTOS:-/data/files}
 OUT=${OUT:-/data/work}
+MANIFEST=${MANIFEST:-}
 JOBS=1
 
 while [ $# -gt 0 ]; do
@@ -17,6 +24,7 @@ while [ $# -gt 0 ]; do
         --jobs) JOBS="$2"; shift 2 ;;
         --photos) PHOTOS="$2"; shift 2 ;;
         --out) OUT="$2"; shift 2 ;;
+        --manifest) MANIFEST="$2"; shift 2 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -24,8 +32,31 @@ done
 cd /srv/service-python
 mkdir -p "$OUT"
 
-mapfile -t images < <(find "$PHOTOS" -maxdepth 1 -type f \
-    \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) | sort)
+if [ -n "$MANIFEST" ]; then
+    [ -f "$MANIFEST" ] || { echo "manifest not found: $MANIFEST" >&2; exit 2; }
+
+    # One basename per line, as rcu:legacy-manifest writes it. A name that is
+    # not on disk is dropped here *and counted*: a build that quietly extracts
+    # fewer records than the catalogue lists is how a catalog loses rows.
+    absent=0
+    images=()
+    : > "$OUT/missing.txt"   # truncated per run, or two builds' gaps merge
+
+    while IFS= read -r name; do
+        [ -z "$name" ] && continue
+        if [ -f "$PHOTOS/$name" ]; then
+            images+=("$PHOTOS/$name")
+        else
+            absent=$((absent + 1))
+            echo "not on disk: $name" >> "$OUT/missing.txt"
+        fi
+    done < "$MANIFEST"
+
+    echo "manifest $MANIFEST: ${#images[@]} present, $absent absent (see $OUT/missing.txt)"
+else
+    mapfile -t images < <(find "$PHOTOS" -maxdepth 1 -type f \
+        \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) | sort)
+fi
 
 echo "${#images[@]} image(s) from $PHOTOS -> $OUT  (jobs=$JOBS)"
 [ "${#images[@]}" -eq 0 ] && { echo "nothing to extract"; exit 1; }
@@ -40,4 +71,5 @@ python scripts/build_index.py --fp "$OUT/fp" --out "$OUT/index/tokens.npz"
 
 echo
 echo "done. Reload the running service and refresh the catalog table:"
+echo "  (the manifest and the import must come from the same catalogue read)"
 echo "  docker compose exec laravel php artisan rcu:import-catalog --legacy --prune --reindex"

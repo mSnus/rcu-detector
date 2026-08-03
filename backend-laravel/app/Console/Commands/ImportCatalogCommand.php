@@ -5,8 +5,8 @@ namespace App\Console\Commands;
 use App\Models\RcuFingerprint;
 use App\Services\RcuService;
 use App\Services\RcuServiceException;
+use App\Support\LegacyCatalog;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Load the fingerprints produced by the offline extraction run into MySQL.
@@ -237,29 +237,22 @@ class ImportCatalogCommand extends Command
      */
     private function legacyMetadata(): array
     {
-        $rows = DB::connection('legacy')
-            ->table('node as n')
-            ->join('content_field_image_cache as c', function ($j) {
-                $j->on('c.nid', '=', 'n.nid')->where('c.delta', '=', 0);
-            })
-            ->join('files as f', 'f.fid', '=', 'c.field_image_cache_fid')
-            ->where('n.type', 'product')
-            ->select('n.nid', 'n.title', 'f.filepath')
-            ->get();
+        // Shared with rcu:legacy-manifest, which decides what is extracted in
+        // the first place. One definition, so the two cannot drift.
+        $rows = LegacyCatalog::primaryPhotos();
 
         $byStem = [];
         $nids = [];
 
         foreach ($rows as $r) {
-            $basename = basename($r->filepath);
-            $stem = pathinfo($basename, PATHINFO_FILENAME);
+            $stem = pathinfo($r->basename, PATHINFO_FILENAME);
 
-            $nids[$stem][] = (int) $r->nid;
+            $nids[$stem][] = $r->nid;
 
             $byStem[$stem] = [
-                'nid' => (int) $r->nid,
+                'nid' => $r->nid,
                 'title' => $r->title,
-                'filepath' => $basename,
+                'filepath' => $r->basename,
             ];
         }
 

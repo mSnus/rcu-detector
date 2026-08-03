@@ -170,17 +170,47 @@ docker compose exec laravel php artisan rcu:import-catalog --legacy --dry-run
 
 ## 7. Build the catalog
 
-Extraction is a batch job, not a service:
+Extraction is a batch job, not a service. It runs in three steps, and the first
+one is not optional on the legacy catalogue:
 
 ```bash
-docker compose --profile build run --rm extract --jobs 4
+docker compose exec -T laravel php artisan rcu:legacy-manifest --out=- > work/primary.txt
+docker compose --profile build run --rm extract --manifest /data/work/primary.txt --jobs 4
 docker compose exec laravel php artisan rcu:import-catalog --legacy --prune --reindex
 ```
 
+**`files/` is not a directory of remotes.** Roughly a third of it is
+replacement-model promo banners (`Zamena_*`) and scanned instruction sheets,
+hung off the same products at `delta >= 1`. Only the database says which is
+which, and the extraction container has no database — hence the manifest.
+Extracting without one indexes an instruction sheet as if it were a remote, so
+it can be returned as a match, and every such image imports as a record with no
+title and no `model_id`, indistinguishable from a genuine metadata miss.
+
+Measured over the 138-image sample drop, extracted both ways:
+
+| | fingerprints | unmatched |
+|---|---|---|
+| whole directory | 165 | 56 (34%) |
+| `--manifest` | 109 | **0** |
+
+The manifest goes out over **stdout** (`--out=-`), because the Laravel
+container mounts `work/` read-only — it reads build artefacts, it does not
+produce them. Every diagnostic goes to stderr, so the redirect above captures
+the list and nothing else; run it without redirecting to see what was excluded
+and which catalogued photographs are missing from disk.
+
+The manifest and the import must come from the same read of the catalogue. Both
+go through `App\Support\LegacyCatalog::primaryPhotos()` so they cannot define
+"the product's photo" differently; regenerate the manifest if the catalogue
+changed under a part-finished build.
+
 `--jobs` is bounded by memory, not cores — allow ~1 GB per job. Measured
-throughput is ~6.6 s per image single-process: roughly 18 h for 10k images and
-~4 days for 50k, so choose `--jobs` deliberately and consider a first run on a
-few thousand before committing to the whole catalogue.
+throughput single-process: **6.6 s per image** on the original photo set and
+**8.0 s** over 138 legacy images (18m31s), which is the more representative
+figure. That is roughly 22 h for 10k images and ~4.6 days for 50k, so choose
+`--jobs` deliberately and consider a first run on a few thousand before
+committing to the whole catalogue.
 
 The token index and the `rcu_fingerprints` table must come from the *same*
 extraction run. When they drift, matching still "works" but returns record ids

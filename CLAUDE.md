@@ -63,7 +63,12 @@ RCU_INTERNAL_TOKEN=... RCU_INDEX_PATH=../work/index/tokens.npz \
 # tell the running service to reload its index
 cd backend-laravel
 php artisan rcu:import-catalog --prune --reindex
-php artisan test                        # 48; 5 need the service running
+php artisan test                        # 61; 5 need the service running
+
+# On the legacy catalogue: decide what to extract BEFORE extracting it, and
+# take metadata from the catalogue afterwards. files/ is a third non-remotes.
+php artisan rcu:legacy-manifest --out=- > ../work/primary.txt
+php artisan rcu:import-catalog --legacy --prune --reindex
 ```
 
 Extract **one image per process**: OCR runs twice per body (both orientations)
@@ -276,6 +281,32 @@ These caused real bugs. Do not reintroduce them.
 - `reviewed` and `model_id` are the only two catalog columns a **person** owns
   rather than the extractor. A rebuild that overwrites them empties the review
   queue and unlinks the catalog joins, and neither can be recomputed.
+- The legacy `files/` directory is **not a directory of remotes**. A third of
+  it is replacement-model promo banners (`Zamena_*`) and scanned instruction
+  sheets, hung off the same products at `delta >= 1`. The delta=0 rule was
+  known, documented in `config/rcu.php` and pinned by a test — and the thing
+  that decides *what gets extracted* ignored all of it, because that decision
+  lives in `docker/build-catalog.sh`, which had no database and just globbed
+  the directory. Measured on the sample drop: 165 fingerprints of which 56
+  (34%) could never be keyed, versus 109 and zero once the build reads a
+  manifest. **A rule enforced at the consuming end is not enforced.** The
+  producing end is `rcu:legacy-manifest`; both ends now call
+  `App\Support\LegacyCatalog::primaryPhotos()` so there is one definition.
+- Metadata that fails to match imports as **`title` and `model_id` NULL**,
+  which is also what a genuine catalogue gap looks like. That is why the 56
+  sat there unnoticed: nothing distinguishes "we extracted an instruction
+  sheet" from "this remote has no row". Count what is excluded at the point of
+  exclusion, where the reason is still known.
+- The Laravel container mounts `work/` **read-only**, so anything Laravel must
+  hand the build travels over stdout (`rcu:legacy-manifest --out=-`) with the
+  diagnostics on stderr. `getErrorStyle()` silently falls back to stdout when
+  there is no real console, so `$this->artisan()` cannot assert that split —
+  verify it against the container.
+- **`docker compose exec` runs the image, not the checkout.** A measurement
+  taken against a stale container is a measurement of old code: the first run
+  of the legacy import here reported 165 of 165 unmatched, which was the
+  pre-fix nid keying still baked into an image built before the fix landed.
+  `docker compose build laravel` before believing any number from `exec`.
 
 ## Next up (session 6)
 
