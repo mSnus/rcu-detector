@@ -99,12 +99,49 @@ between runs and silently corrupts fingerprints. Run it over every new drop.
 
 The import reads product metadata over a separate read-only connection.
 
-If that database is on the Docker host, `LEGACY_DB_HOST=host.docker.internal`
-reaches it, but MySQL will refuse the login: containers arrive from the bridge
-subnet, and a grant issued to `'user'@'localhost'` does not cover them. The
-symptom is `Host '172.28.0.x' is not allowed to connect` — an authentication
-refusal rather than a connection failure, so `bind-address` is usually already
-correct.
+If that database is on the Docker host there are two ways to reach it, and the
+socket is the better one.
+
+**Never set `LEGACY_DB_HOST=localhost`.** To the mysql PDO driver `localhost`
+means "use a Unix socket, ignore the port", so it looks for a socket *inside
+the Laravel container*, where there is none. The error is `[2002] No such file
+or directory` naming `Port: 3306` that was never dialled. Use
+`host.docker.internal` for TCP, or `LEGACY_DB_SOCKET` for the socket.
+
+### Over the host's socket (preferred)
+
+Nothing restarts, nothing is exposed to the network, and MySQL's startup does
+not come to depend on a Docker interface existing.
+
+```ini
+# .env
+LEGACY_DB_SOCKET=/var/run/mysqld/mysqld.sock
+LEGACY_DB_SOCKET_DIR=/var/run/mysqld     # host path, if not the default
+```
+
+The connection then arrives as `localhost`, so it needs the ordinary local
+grant — *not* the subnet grant below:
+
+```sql
+CREATE USER 'rcud_usr'@'localhost' IDENTIFIED BY '...';
+GRANT SELECT ON rcud.* TO 'rcud_usr'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+### Over TCP
+
+`LEGACY_DB_HOST=host.docker.internal` resolves to the host, but expect two
+refusals in sequence, which mean different things:
+
+- `[2002] Connection refused` — MySQL binds `127.0.0.1` only. Confirm with
+  `ss -ltnp | grep 3306`. Fixing it means `bind-address = 127.0.0.1,172.28.0.1`
+  and a restart of a live database, and it couples mysqld's startup to the
+  Docker network: if `172.28.0.1` is absent at boot, **mysqld will not start**.
+  `0.0.0.0` avoids that but then the port needs firewalling off any public
+  interface. This is why the socket is preferred.
+- `Host '172.28.0.x' is not allowed to connect` — reached MySQL, login refused.
+  Containers arrive from the bridge subnet and a grant to `'user'@'localhost'`
+  does not cover them:
 
 ```sql
 CREATE USER 'rcud_usr'@'172.28.%' IDENTIFIED BY '...';
@@ -112,8 +149,12 @@ GRANT SELECT ON rcud.* TO 'rcud_usr'@'172.28.%';
 FLUSH PRIVILEGES;
 ```
 
-`SELECT` only. Nothing here writes to that schema, and a migration pointed at
-the connection would be destructive.
+Substitute the real database name. `rcud` is this file's placeholder, and a
+grant written against it is silently useless — `SHOW GRANTS FOR 'rcud_usr'@...`
+is the check.
+
+`SELECT` only, on either route. Nothing here writes to that schema, and a
+migration pointed at the connection would be destructive.
 
 The `internal` network pins `172.28.0.0/16` deliberately. Compose otherwise
 allocates from the shared 172.17–172.31 pool in creation order, so a stack

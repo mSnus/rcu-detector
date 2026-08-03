@@ -37,9 +37,13 @@ services:
       DB_USERNAME: ${DB_USERNAME:-rcu}
       DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
       LEGACY_DB_HOST: ${LEGACY_DB_HOST:-mysql}
+      LEGACY_DB_PORT: ${LEGACY_DB_PORT:-3306}
       LEGACY_DB_DATABASE: ${LEGACY_DB_DATABASE:-rcud}
       LEGACY_DB_USERNAME: ${LEGACY_DB_USERNAME:-}
       LEGACY_DB_PASSWORD: ${LEGACY_DB_PASSWORD:-}
+      # Set to connect over the host's MySQL socket instead of TCP -- see
+      # LEGACY_DB_SOCKET_DIR below. Empty means TCP, which is the default.
+      LEGACY_DB_SOCKET: ${LEGACY_DB_SOCKET:-}
       RCU_SERVICE_URL: http://rcu-service:8600
       RCU_SERVICE_TOKEN: ${RCU_INTERNAL_TOKEN}
       RCU_LEGACY_FILES: /data/files
@@ -51,6 +55,11 @@ services:
       - ./work:/data/work:ro
       - ${RCU_FILES_DIR:-./files}:/data/files:ro
       - laravel-storage:/srv/app/storage
+      # The host's MySQL socket directory, so the legacy catalogue can be read
+      # without opening that database to TCP. Inert unless LEGACY_DB_SOCKET is
+      # set. Harmless when the host runs no MySQL: Docker creates the source
+      # directory empty and nothing looks inside it.
+      - ${LEGACY_DB_SOCKET_DIR:-/var/run/mysqld}:/var/run/mysqld
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks: [internal]
