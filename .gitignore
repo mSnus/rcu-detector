@@ -29,3 +29,8 @@ photos/
 *.ico
 *.npz
 *.sqlite
+
+# Deployment secrets. Only .env.example is tracked.
+.env
+.env.*
+!.env.example

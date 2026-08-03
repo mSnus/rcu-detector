@@ -12,3 +12,6 @@ backend-laravel/storage/framework/views
 backend-laravel/database/database.sqlite
 **/__pycache__
 **/*.pyc
+# Stale dev package manifests: they reference dev-only providers (laravel/pail)
+# that --no-dev does not install, and package:discover then fails.
+backend-laravel/bootstrap/cache/*.php

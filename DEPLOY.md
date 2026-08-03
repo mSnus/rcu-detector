@@ -41,7 +41,6 @@ command warns when the two counts disagree.
 
 ```bash
 docker compose exec rcu-service python scripts/check_decode.py --dir /data/files
-docker compose exec laravel php artisan test
 curl -s http://127.0.0.1:8080/api/identify -F photo=@some-remote.jpg
 ```
 
@@ -49,6 +48,33 @@ curl -s http://127.0.0.1:8080/api/identify -F photo=@some-remote.jpg
 image identically and that decoding is repeatable. Run it over any new photo
 drop: a truncated JPEG otherwise decodes into a partly uninitialised buffer,
 which is nondeterministic and silently corrupts fingerprints.
+
+The test suite does **not** run in the `laravel` image: it is built with
+`composer install --no-dev`, so phpunit is absent by design. Run tests on a
+development checkout, not against a production container.
+
+The recognition service is intentionally unreachable from the host — only the
+`internal` network can see it. Confirm both halves:
+
+```bash
+curl -s -m 5 http://127.0.0.1:8600/health          # must fail to connect
+docker compose exec laravel php -r 'echo file_get_contents("http://rcu-service:8600/health");'
+```
+
+## Legacy database access from containers
+
+If the legacy catalogue lives on the Docker host rather than in this stack,
+`LEGACY_DB_HOST=host.docker.internal` reaches it, but MySQL will refuse the
+connection: containers arrive from the bridge subnet, and a grant issued to
+`'user'@'localhost'` does not cover them.
+
+```sql
+CREATE USER 'rcud_usr'@'172.20.0.%' IDENTIFIED BY '...';
+GRANT SELECT ON rcud.* TO 'rcud_usr'@'172.20.0.%';
+```
+
+`SELECT` only. Nothing in this project writes to the legacy schema, and a
+migration pointed at that connection would be destructive.
 
 ## Memory
 

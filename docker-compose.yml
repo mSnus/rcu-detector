@@ -51,6 +51,8 @@ services:
       - ./work:/data/work:ro
       - ${RCU_FILES_DIR:-./files}:/data/files:ro
       - laravel-storage:/srv/app/storage
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks: [internal]
 
   nginx:
