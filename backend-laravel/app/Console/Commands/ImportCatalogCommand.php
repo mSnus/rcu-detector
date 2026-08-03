@@ -30,7 +30,7 @@ class ImportCatalogCommand extends Command
         {--fp= : Directory of fingerprint JSON (default config rcu.catalog.fp_dir)}
         {--photos= : Directory of source photographs}
         {--norm= : Directory of rectified crops}
-        {--legacy : Take metadata from the legacy catalogue DB, keyed on nid}
+        {--legacy : Take metadata from the legacy catalogue DB, keyed on photo filename}
         {--prune : Delete rows whose fingerprint file is gone}
         {--reindex : Ask the service to reload its token index afterwards}
         {--dry-run : Report what would change and write nothing}';
@@ -58,10 +58,20 @@ class ImportCatalogCommand extends Command
         }
 
         $dry = (bool) $this->option('dry-run');
-        $legacy = $this->option('legacy') ? $this->legacyMetadata() : [];
+        $legacy = ['byStem' => [], 'ambiguous' => [], 'rows' => 0];
 
         if ($this->option('legacy')) {
-            $this->info(count($legacy) . ' product(s) with a primary photo in the legacy catalogue');
+            $legacy = $this->legacyMetadata();
+
+            $this->info($legacy['rows'] . ' product(s) with a primary photo in the legacy catalogue');
+
+            if ($legacy['ambiguous'] !== []) {
+                $this->warn(count($legacy['ambiguous']) . ' filename(s) name more than one product '
+                    . 'and cannot be matched:');
+                foreach (array_slice($legacy['ambiguous'], 0, 5, true) as $stem => $nids) {
+                    $this->line("  {$stem} -> nid " . implode(', ', $nids));
+                }
+            }
         }
 
         $created = $updated = $failed = 0;
@@ -86,8 +96,9 @@ class ImportCatalogCommand extends Command
             $meta = null;
 
             if ($this->option('legacy')) {
-                // The stem is the node id, so no filename guessing.
-                $meta = $legacy[$stem] ?? null;
+                // The stem is the photo's filename, which is how Drupal
+                // stored it and how it was extracted. See legacyMetadata().
+                $meta = $legacy['byStem'][$stem] ?? null;
                 if ($meta === null) {
                     $unmatched[] = $recordId;
                 }
@@ -203,13 +214,26 @@ class ImportCatalogCommand extends Command
     }
 
     /**
-     * Primary product photos from the legacy catalogue, keyed by node id.
+     * Primary product photos from the legacy catalogue, keyed by the stem of
+     * the file on disk -- which is what a record_id is built from.
      *
      * delta=0 is the product's own photo; higher deltas are replacement-model
-     * promos and instruction sheets. The file on disk is basename(filepath) --
-     * `filename` is not unique (two remotes share "IRC_new.jpg").
+     * promos and instruction sheets.
      *
-     * @return array<string, array{nid: int, title: string, filepath: string}>
+     * Keyed on the filename rather than the nid because the photos are
+     * extracted under the names Drupal gave them, so the nid never reaches the
+     * record_id. The cost is that the key is not unique where the nid was:
+     * two remotes genuinely share "IRC_new.jpg", and this sample has 64 such
+     * stems in 13828 rows. A colliding stem is dropped from the map and
+     * reported, never resolved by picking one -- silently attaching another
+     * product's title and model to a record is worse than leaving it bare,
+     * and it cannot be detected downstream.
+     *
+     * @return array{
+     *     byStem: array<string, array{nid: int, title: string, filepath: string}>,
+     *     ambiguous: array<string, list<int>>,
+     *     rows: int,
+     * }
      */
     private function legacyMetadata(): array
     {
@@ -223,16 +247,37 @@ class ImportCatalogCommand extends Command
             ->select('n.nid', 'n.title', 'f.filepath')
             ->get();
 
-        $out = [];
+        $byStem = [];
+        $nids = [];
+
         foreach ($rows as $r) {
-            $out[(string) $r->nid] = [
+            $basename = basename($r->filepath);
+            $stem = pathinfo($basename, PATHINFO_FILENAME);
+
+            $nids[$stem][] = (int) $r->nid;
+
+            $byStem[$stem] = [
                 'nid' => (int) $r->nid,
                 'title' => $r->title,
-                'filepath' => basename($r->filepath),
+                'filepath' => $basename,
             ];
         }
 
-        return $out;
+        // A stem naming more than one *product* is unusable. The same nid
+        // twice is a duplicate delta=0 row, not an ambiguity: the metadata is
+        // the same either way, so keep it.
+        $ambiguous = [];
+
+        foreach ($nids as $stem => $seen) {
+            $distinct = array_values(array_unique($seen));
+
+            if (count($distinct) > 1) {
+                $ambiguous[$stem] = $distinct;
+                unset($byStem[$stem]);
+            }
+        }
+
+        return ['byStem' => $byStem, 'ambiguous' => $ambiguous, 'rows' => $rows->count()];
     }
 
     /**

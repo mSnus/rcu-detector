@@ -97,12 +97,12 @@ class ImportLegacyCatalogTest extends TestCase
     {
         $this->product(1508, 'MYSTERY MMD-3601 пульт для телевизора',
             [0 => [11, 'MMD-3601_all.jpg', 'files/MMD-3601_all.jpg']]);
-        $this->fingerprint('1508_0');
+        $this->fingerprint('MMD-3601_all_0');
 
         $this->artisan('rcu:import-catalog --legacy')->assertSuccessful();
 
         $r = RcuFingerprint::sole();
-        $this->assertSame('1508_0', $r->record_id);
+        $this->assertSame('MMD-3601_all_0', $r->record_id);
         $this->assertSame(1508, (int) $r->model_id);
         // Stored verbatim -- never parsed into brand/model.
         $this->assertSame('MYSTERY MMD-3601 пульт для телевизора', $r->title);
@@ -125,11 +125,12 @@ class ImportLegacyCatalogTest extends TestCase
             1 => [22, 'Zamena_TV_4.jpg', 'files/Zamena_TV_4_615.jpg'],
             2 => [23, 'MMD_instr.jpg', 'files/MMD_instr.jpg'],
         ]);
-        $this->fingerprint('1325_0');
+        $this->fingerprint('6710V00125A_0');
 
         $this->artisan('rcu:import-catalog --legacy')->assertSuccessful();
 
         $this->assertSame('6710V00125A.jpg', RcuFingerprint::sole()->source_image);
+        $this->assertSame(1325, (int) RcuFingerprint::sole()->model_id);
     }
 
     /**
@@ -144,16 +145,65 @@ class ImportLegacyCatalogTest extends TestCase
             [0 => [31, 'IRC_new.jpg', 'files/IRC_new_237_51.jpg']]);
         $this->product(1508, 'MYSTERY MMD-3601',
             [0 => [32, 'IRC_new.jpg', 'files/IRC_new_20.jpg']]);
-        $this->fingerprint('171_0');
-        $this->fingerprint('1508_0');
+        $this->fingerprint('IRC_new_237_51_0');
+        $this->fingerprint('IRC_new_20_0');
 
         $this->artisan('rcu:import-catalog --legacy')->assertSuccessful();
 
         $this->assertSame(2, RcuFingerprint::count(), 'the two records merged');
-        $this->assertSame('IRC_new_237_51.jpg',
-            RcuFingerprint::where('record_id', '171_0')->sole()->source_image);
-        $this->assertSame('IRC_new_20.jpg',
-            RcuFingerprint::where('record_id', '1508_0')->sole()->source_image);
+
+        $a = RcuFingerprint::where('record_id', 'IRC_new_237_51_0')->sole();
+        $b = RcuFingerprint::where('record_id', 'IRC_new_20_0')->sole();
+
+        $this->assertSame('IRC_new_237_51.jpg', $a->source_image);
+        $this->assertSame('IRC_new_20.jpg', $b->source_image);
+        // Drupal's _NN suffix is what keeps these two apart, so it is also
+        // what keeps them matchable once the key is the filename.
+        $this->assertSame(171, (int) $a->model_id);
+        $this->assertSame(1508, (int) $b->model_id);
+    }
+
+    /**
+     * Where the _NN suffix is absent, two products really do share a filename
+     * on disk -- 64 stems over 13828 rows on the real catalogue. There is no
+     * information left to tell them apart, so both are left unmatched and
+     * reported. Picking one would attach the wrong manufacturer and model to
+     * a record, and nothing downstream could detect it.
+     */
+    public function test_a_filename_naming_two_products_matches_neither(): void
+    {
+        $this->product(171, 'IRC-2406D [TELEFUNKEN TV]',
+            [0 => [31, 'IRC_new.jpg', 'files/IRC_new.jpg']]);
+        $this->product(1508, 'MYSTERY MMD-3601',
+            [0 => [32, 'IRC_new.jpg', 'files/IRC_new.jpg']]);
+        $this->fingerprint('IRC_new_0');
+
+        $this->artisan('rcu:import-catalog --legacy')
+            ->expectsOutputToContain('name more than one product')
+            ->assertSuccessful();
+
+        $r = RcuFingerprint::sole();
+        $this->assertNull($r->title, 'guessed between two products');
+        $this->assertNull($r->model_id);
+    }
+
+    /**
+     * The same nid twice at delta 0 is a duplicate row, not an ambiguity: both
+     * carry the same title and model, so there is nothing to be wrong about.
+     * The real catalogue has exactly one (13828 rows, 13827 products).
+     */
+    public function test_one_product_with_two_delta_zero_rows_still_matches(): void
+    {
+        $this->product(1508, 'MYSTERY MMD-3601', [0 => [11, 'a.jpg', 'files/a.jpg']]);
+        DB::connection('legacy')->table('files')
+            ->insert(['fid' => 12, 'nid' => 1508, 'filename' => 'a.jpg', 'filepath' => 'files/a.jpg']);
+        DB::connection('legacy')->table('content_field_image_cache')
+            ->insert(['nid' => 1508, 'delta' => 0, 'field_image_cache_fid' => 12]);
+        $this->fingerprint('a_0');
+
+        $this->artisan('rcu:import-catalog --legacy')->assertSuccessful();
+
+        $this->assertSame(1508, (int) RcuFingerprint::sole()->model_id);
     }
 
     /** A fingerprint with no product row means fp/ and the DB disagree. */
@@ -174,7 +224,7 @@ class ImportLegacyCatalogTest extends TestCase
     {
         $this->product(1508, 'first title',
             [0 => [11, 'a.jpg', 'files/a.jpg']]);
-        $this->fingerprint('1508_0');
+        $this->fingerprint('a_0');
         $this->artisan('rcu:import-catalog --legacy')->assertSuccessful();
 
         RcuFingerprint::sole()->update(['reviewed' => true]);
