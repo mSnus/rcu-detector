@@ -48,6 +48,11 @@ def process_image(path: Path, out_dir: Path, ensemble: bool = True,
     possibly empty -- when it could. The caller counts those separately: an
     unreadable file and a readable one holding no recognisable remote are
     different problems, and lumping them together hides both.
+
+    Entries carry `dropped`: None for a record that was written, otherwise the
+    reason it was refused. A refused entry is still returned rather than
+    silently omitted, because a record that vanishes without a reason is
+    indistinguishable from a catalogue gap downstream.
     """
     # Never cv2.imread: the service decodes uploads through the same helper,
     # and a truncated JPEG read any other way fills its missing region with
@@ -59,6 +64,18 @@ def process_image(path: Path, out_dir: Path, ensemble: bool = True,
     if img is None:
         print(f"  !! unreadable: {path}")
         return None
+
+    h, w = img.shape[:2]
+    if max(h, w) < CFG.normalize.min_source_long_side:
+        # Refused before extraction, not after: there is nothing to look at in
+        # an overlay of an upscaled thumbnail, and running it only produces a
+        # confident fingerprint of interpolation noise. Counted by the caller.
+        reason = f"too small ({w}x{h}, long side under {CFG.normalize.min_source_long_side})"
+        print(f"  !! {path.name}: {reason}")
+        # Not an empty list: that means "readable, no remote in it", which is a
+        # different problem with a different fix. The reason travels with the
+        # result so the caller records this one as itself.
+        return [{"stem": stem_base, "fingerprint": None, "dropped": reason}]
 
     for sub in ("norm", "debug", "fp"):
         (out_dir / sub).mkdir(parents=True, exist_ok=True)
@@ -79,6 +96,23 @@ def process_image(path: Path, out_dir: Path, ensemble: bool = True,
         cv2.imwrite(str(out_dir / "debug" / f"{stem}.jpg"),
                     debug_panel(img, r, use_ocr=use_ocr),
                     [cv2.IMWRITE_JPEG_QUALITY, 88])
+
+        # A body with no buttons and no text has no tokens, so it can never be
+        # retrieved -- by itself or by anything else. Writing it anyway costs a
+        # catalog row, an index doc and a fingerprint file, and inflates every
+        # count downstream with records that are structurally unmatchable.
+        # Session 6 found 29 of 109 like this: the manifest had resolved to
+        # 16x50 imagecache thumbnails, and nothing said so, because the build
+        # reported them as remotes extracted. The dimensions go in the reason
+        # for exactly that case -- it is the tell.
+        if not r.buttons and not r.regions:
+            reason = f"no features ({img.shape[1]}x{img.shape[0]} source)"
+            if verbose:
+                print(f"  [{r.index}] dropped: {reason}")
+            results.append({"stem": stem, "fingerprint": None,
+                            "dropped": reason})
+            continue
+
         (out_dir / "fp" / f"{stem}.json").write_text(json.dumps(fp, indent=2))
 
         if verbose:
@@ -97,7 +131,7 @@ def process_image(path: Path, out_dir: Path, ensemble: bool = True,
                       f"{'?' if r.brand and r.brand['source'] != 'list' else ''}  "
                       f"model={r.model_code or '-'}")
 
-        results.append({"stem": stem, "fingerprint": fp})
+        results.append({"stem": stem, "fingerprint": fp, "dropped": None})
 
     return results
 
@@ -126,6 +160,13 @@ def main() -> None:
                          "for a DB-driven build; source filenames are not "
                          "unique and collide silently in fp/. Single image "
                          "only.")
+    ap.add_argument("--min-long-side", type=int, default=None,
+                    help="refuse source images whose long side is under this "
+                         f"(default {CFG.normalize.min_source_long_side}). The crop "
+                         "is upscaled to a fixed width whatever the source, so "
+                         "a thumbnail yields confident buttons traced from "
+                         "interpolation. Lower it only for a drop you have "
+                         "looked at.")
     ap.add_argument("--no-watermark-filter", action="store_true",
                     help="keep source-watermark text. Use when the images are "
                          "clean; the filter is only needed for scraped ones.")
@@ -134,6 +175,10 @@ def main() -> None:
                          f"default {','.join(CFG.ocr.watermark_terms) or '(none)'}. "
                          "Empty string disables the filter.")
     args = ap.parse_args()
+
+    if args.min_long_side is not None:
+        CFG.normalize.min_source_long_side = args.min_long_side
+    print(f"source floor: long side >= {CFG.normalize.min_source_long_side}px")
 
     if args.no_watermark_filter:
         CFG.ocr.watermark_filter = False
@@ -194,7 +239,11 @@ def main() -> None:
         elif not found:
             skipped.append((p, "no remote found"))
         else:
-            total += len(found)
+            kept = [f for f in found if not f["dropped"]]
+            for f in found:
+                if f["dropped"]:
+                    skipped.append((p, f["dropped"]))
+            total += len(kept)
 
     print(f"\n{len(paths)} image(s) -> {total} remote(s) extracted"
           f"{f', {len(skipped)} skipped' if skipped else ''}")
@@ -211,7 +260,10 @@ def main() -> None:
 
         by_reason: dict[str, int] = {}
         for _, why in skipped:
-            key = why.split(":")[0]
+            # Group on the reason, not its detail: "no features" carries the
+            # source dimensions, which would otherwise split the summary into
+            # one line per image size.
+            key = why.split(":")[0].split(" (")[0]
             by_reason[key] = by_reason.get(key, 0) + 1
         print("  skipped: " + ", ".join(f"{n} {k}" for k, n in sorted(by_reason.items())))
         print(f"  -> {report}")

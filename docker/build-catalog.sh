@@ -18,6 +18,9 @@ PHOTOS=${PHOTOS:-/data/files}
 OUT=${OUT:-/data/work}
 MANIFEST=${MANIFEST:-}
 JOBS=1
+# Empty means "whatever app/config.py says". Only set this to extract a drop of
+# deliberately small images you have looked at first.
+MIN_LONG_SIDE=${MIN_LONG_SIDE:-}
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -25,6 +28,7 @@ while [ $# -gt 0 ]; do
         --photos) PHOTOS="$2"; shift 2 ;;
         --out) OUT="$2"; shift 2 ;;
         --manifest) MANIFEST="$2"; shift 2 ;;
+        --min-long-side) MIN_LONG_SIDE="$2"; shift 2 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -65,9 +69,24 @@ echo "${#images[@]} image(s) from $PHOTOS -> $OUT  (jobs=$JOBS)"
 
 # Each worker is a fresh process, so memory is bounded per image. Raise --jobs
 # only as far as (available RAM / ~700 MB) allows.
+extra=()
+[ -n "$MIN_LONG_SIDE" ] && extra+=(--min-long-side "$MIN_LONG_SIDE")
+
 printf '%s\0' "${images[@]}" \
   | xargs -0 -P "$JOBS" -I{} python scripts/extract_one.py "{}" --out "$OUT" \
+        "${extra[@]}" \
   || echo "one or more images failed; see $OUT/skipped.txt"
+
+# Each worker appends its own reason, and one process per image means nothing
+# ever prints a total. Say here what the build refused and why: at 13k images
+# the per-image lines are long gone, and "extracted N" alone cannot distinguish
+# a clean drop from one that was three quarters thumbnails.
+if [ -s "$OUT/skipped.txt" ]; then
+    echo
+    echo "excluded ($(wc -l < "$OUT/skipped.txt") image(s), see $OUT/skipped.txt):"
+    sed 's/.*\t//; s/ (.*//' "$OUT/skipped.txt" | sort | uniq -c | sort -rn \
+      | sed 's/^/  /'
+fi
 
 python scripts/build_index.py --fp "$OUT/fp" --out "$OUT/index/tokens.npz"
 

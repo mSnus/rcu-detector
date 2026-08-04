@@ -64,6 +64,21 @@ class NormalizeConfig:
     pad_frac: float = 0.015
     max_aspect: float = 12.0
 
+    # Source images whose LONG side is under this are refused by the catalog
+    # build. Rectification upscales every body to out_width regardless of what
+    # it started as, so a thumbnail is not merely a poor image: it is enlarged
+    # 20x and detection then traces interpolation artefacts as keycaps. A
+    # 16x50 imagecache thumbnail extracted 29 confident "buttons" this way,
+    # indexed, and self-matched at a constant 0.925 -- 72 of 91 records in the
+    # session-6 calibration were such thumbnails, which is why its bands looked
+    # perfect and meant nothing.
+    #
+    # Long side, not both sides, and not area: a remote is elongated, so the
+    # real catalogue standard is ~303x1090. Requiring 600 on both sides rejects
+    # 52 of the 62 usable images in the dev sample; requiring it on the long
+    # side rejects all 75 thumbnails and none of them.
+    min_source_long_side: int = 600
+
 
 @dataclass
 class ButtonConfig:
