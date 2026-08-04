@@ -131,10 +131,13 @@ class RcuService
                 "recognition service unreachable: {$e->getMessage()}", null, $e
             );
         } catch (RequestException $e) {
+            $detail = $e->response?->json('detail');
+
             throw new RcuServiceException(
                 "recognition service {$what} failed: {$e->getMessage()}",
                 $e->response?->status(),
-                $e
+                $e,
+                is_string($detail) ? $detail : null,
             );
         }
     }
@@ -171,7 +174,8 @@ class RcuService
         if ($response->failed()) {
             // The service reports its own reason in `detail`; keep it, because
             // "index not loaded" and "image too large" need different fixes.
-            $detail = $response->json('detail') ?? $response->body();
+            $stated = $response->json('detail');
+            $detail = $stated ?? $response->body();
             Log::warning("rcu {$what} failed", [
                 'status' => $response->status(),
                 'detail' => $detail,
@@ -179,7 +183,12 @@ class RcuService
 
             throw new RcuServiceException(
                 "recognition service {$what} failed: {$detail}",
-                $response->status()
+                $response->status(),
+                null,
+                // Only what the service actually stated. The fallback above is
+                // the raw body, which on a proxy error or a stack trace is not
+                // something to repeat back to a caller as an explanation.
+                is_string($stated) ? $stated : null,
             );
         }
 

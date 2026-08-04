@@ -171,6 +171,36 @@ class IdentifyTest extends TestCase
         $this->assertDatabaseCount('rcu_queries', 1);
     }
 
+    /**
+     * The service's reason reaches the caller.
+     *
+     * "could not read that image" is wrong for an image the service read
+     * perfectly well and refused on its size, and the difference is the only
+     * thing that tells the user what to change about the photograph.
+     */
+    public function test_a_rejection_carries_the_services_own_reason(): void
+    {
+        Http::fake(['*/identify*' => Http::response(
+            ['detail' => 'image too small: 200x300, long side must be at least 600px'], 400
+        )]);
+
+        $this->postJson('/api/identify', ['photo' => $this->photo()])
+            ->assertStatus(422)
+            ->assertJsonPath('message',
+                'image too small: 200x300, long side must be at least 600px');
+    }
+
+    public function test_a_rejection_without_a_reason_still_says_something(): void
+    {
+        Http::fake(['*/identify*' => Http::response('not json at all', 400)]);
+
+        $this->postJson('/api/identify', ['photo' => $this->photo()])
+            ->assertStatus(422)
+            ->assertJsonPath('error', 'image_rejected')
+            ->assertJsonPath('message',
+                'The recognition service could not read that image.');
+    }
+
     public function test_an_oversized_image_reported_by_the_service_is_also_422(): void
     {
         Http::fake(['*/identify*' => Http::response(['detail' => 'image too large'], 413)]);

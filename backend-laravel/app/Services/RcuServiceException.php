@@ -17,7 +17,16 @@ class RcuServiceException extends RuntimeException
     public function __construct(
         string $message,
         public readonly ?int $status = null,
-        ?Throwable $previous = null
+        ?Throwable $previous = null,
+        /*
+         * The service's own explanation, when it gave one. FastAPI puts it in
+         * `detail`. Worth carrying separately from the exception message,
+         * which is built for a log line and contains a response dump: on a
+         * rejection this is a statement about the caller's own image ("image
+         * too small: 200x300"), and it is the only thing that tells them what
+         * to do differently.
+         */
+        public readonly ?string $detail = null,
     ) {
         parent::__construct($message, 0, $previous);
     }

@@ -58,7 +58,12 @@ class IdentifyController extends Controller
             if ($e->isRejection()) {
                 return response()->json([
                     'error' => 'image_rejected',
-                    'message' => 'The recognition service could not read that image.',
+                    // The service's own reason when it gave one: "could not
+                    // read that image" is wrong for an image it read perfectly
+                    // well and refused on its size, and the difference is the
+                    // only thing that tells the user what to change.
+                    'message' => $e->detail
+                        ?? 'The recognition service could not read that image.',
                     'request_id' => $query->request_id,
                 ], 422);
             }

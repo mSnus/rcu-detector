@@ -125,6 +125,22 @@ async def _read_image(file: UploadFile) -> np.ndarray:
     img = decode_image(raw)
     if img is None:
         raise HTTPException(status_code=400, detail="undecodable image")
+
+    # Same floor as the catalog build, for the same reason: rectification
+    # upscales every body to a fixed width whatever the source was, so a
+    # thumbnail is enlarged many times over and detection traces the
+    # interpolation as keycaps -- confidently, at plausible quality. The build
+    # refuses these so the catalog is not polluted; refusing here is what stops
+    # a caller being handed a confident answer computed from nothing. A 400
+    # because it is a verdict on the image and will be identical next time.
+    h, w = img.shape[:2]
+    if max(h, w) < CFG.normalize.min_source_long_side:
+        raise HTTPException(
+            status_code=400,
+            detail=f"image too small: {w}x{h}, long side must be at least "
+                   f"{CFG.normalize.min_source_long_side}px",
+        )
+
     return img
 
 
