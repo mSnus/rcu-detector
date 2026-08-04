@@ -1,8 +1,23 @@
 #!/usr/bin/env bash
 # Build the catalog: extract the product photos, then build the token index.
 #
-# One image per process. Looping extract_remotes inside a single process gets
-# OOM-killed; peak RSS is ~700 MB on a 5 MP image at the default OCR upscale.
+# Images are extracted in batches of --batch per process, --jobs batches at a
+# time. Not one image per process, which this did until session 6: loading the
+# OCR model costs more than extracting a catalogue-sized image, so paying it per
+# image dominated the build. Measured on rcud over the same 60 photographs,
+# producing byte-identical output either way:
+#
+#   one process per image, --jobs 2   11m30s   11.5 s/image   ~23 s CPU/image
+#   one process, 60 images serial      8m05s    8.1 s/image     8.1 s CPU/image
+#
+# On 13763 photographs that is the difference between ~44 h and ~15 h.
+#
+# The batch is bounded rather than unlimited because a single process looping
+# extract_remotes does grow: peak RSS is ~700 MB on a 5 MP image at the default
+# OCR upscale, and the whole-directory run this replaced was OOM-killed. Each
+# process exits after --batch images and hands its memory back, which keeps the
+# model load amortised without betting on the leak being absent. Measured at
+# 580-800 MB across a 60-image batch with no upward drift.
 #
 #   docker compose exec laravel php artisan rcu:legacy-manifest --out=/data/work/primary.txt
 #   docker compose --profile build run --rm extract --manifest /data/work/primary.txt --jobs 4
@@ -18,6 +33,9 @@ PHOTOS=${PHOTOS:-/data/files}
 OUT=${OUT:-/data/work}
 MANIFEST=${MANIFEST:-}
 JOBS=1
+# Images per process. Large enough that the OCR model load is amortised, small
+# enough that a process which does grow is reaped long before it matters.
+BATCH=${BATCH:-200}
 # Empty means "whatever app/config.py says". Only set this to extract a drop of
 # deliberately small images you have looked at first.
 MIN_LONG_SIDE=${MIN_LONG_SIDE:-}
@@ -29,6 +47,7 @@ while [ $# -gt 0 ]; do
         --out) OUT="$2"; shift 2 ;;
         --manifest) MANIFEST="$2"; shift 2 ;;
         --min-long-side) MIN_LONG_SIDE="$2"; shift 2 ;;
+        --batch) BATCH="$2"; shift 2 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -72,8 +91,13 @@ echo "${#images[@]} image(s) from $PHOTOS -> $OUT  (jobs=$JOBS)"
 extra=()
 [ -n "$MIN_LONG_SIDE" ] && extra+=(--min-long-side "$MIN_LONG_SIDE")
 
+echo "extracting in batches of $BATCH, $JOBS at a time"
+
+# Each worker handles at most $BATCH images and then exits, so memory is bounded
+# per batch rather than per image. Raise --jobs only as far as
+# (available RAM / ~800 MB) allows.
 printf '%s\0' "${images[@]}" \
-  | xargs -0 -P "$JOBS" -I{} python scripts/extract_one.py "{}" --out "$OUT" \
+  | xargs -0 -P "$JOBS" -n "$BATCH" python scripts/extract_one.py --out "$OUT" \
         "${extra[@]}" \
   || echo "one or more images failed; see $OUT/skipped.txt"
 

@@ -84,9 +84,24 @@ php artisan rcu:legacy-manifest --out=- > ../work/primary.txt
 php artisan rcu:import-catalog --legacy --prune --reindex
 ```
 
-Extract **one image per process**: OCR runs twice per body (both orientations)
-on an upscaled crop, and a whole-directory run in one process grows without
-bound.
+Extract in **bounded batches**, not one image per process and not a whole
+directory in one. `build-catalog.sh --batch N` (default 200) hands N images to
+a process and then lets it exit.
+
+One image per process was the rule through session 5 and it was expensive:
+loading the OCR model costs more than extracting a catalogue-sized image, so
+paying it per image dominated the build. Measured on rcud over the same 60
+photographs, byte-identical output either way — one process per image at
+`--jobs 2` took 11m30s (11.5 s/image, ~23 s CPU/image); one process running all
+60 serially took 8m05s (8.1 s/image). On 13763 photographs that is ~44 h
+against ~15 h.
+
+The batch stays bounded because the other half of the old rule is still true:
+OCR runs twice per body on an upscaled crop, peak RSS is ~700 MB on a 5 MP
+image, and the whole-directory run this replaced was OOM-killed. Letting each
+process exit after N images keeps the model load amortised without betting on
+the growth being absent. Measured at 580-800 MB across a 60-image batch with no
+upward drift.
 
 Memory stopped being the binding constraint in session 5, when the box went to
 3.9 GB. Measured with the service running (393 MB RSS): a 5.3 MP image at the
