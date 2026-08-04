@@ -1,11 +1,27 @@
 <?php
 
 use App\Http\Controllers\AdminVisualiserController;
+use App\Http\Controllers\TryController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return view('welcome');
 });
+
+/*
+| Test page. No auth: it serves catalog crops and match internals to whoever
+| can reach it, which is fine on a loopback dev box and nowhere else, so it is
+| off unless `rcu.try_page` says otherwise. See config/rcu.php.
+|
+| The routes are registered either way and the controller refuses when the flag
+| is off. Registering them conditionally reads as tighter and is not: routes
+| are bound while the application boots, so the behaviour then depends on the
+| environment at boot rather than on the config, which cannot be tested without
+| rebooting the application mid-test and is a worse thing to depend on.
+*/
+Route::get('/try', [TryController::class, 'index'])->name('rcu.try');
+Route::get('/try/photo/{recordId}', [TryController::class, 'photo'])
+    ->where('recordId', '[A-Za-z0-9._-]+')->name('rcu.try.photo');
 
 /*
 | Admin visualiser (plan 6.5).

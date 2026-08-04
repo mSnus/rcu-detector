@@ -55,6 +55,11 @@ services:
       RCU_FP_DIR: /data/work/fp
       RCU_NORM_DIR: /data/work/norm
       RCU_DEBUG_DIR: /data/work/debug
+      # The /try test page has no auth at all: it serves catalog crops and
+      # match internals to anyone who can reach it. Default off, so a box only
+      # gets it by asking. Do not set this on a publicly reachable deployment
+      # without putting authentication in front of the route first.
+      RCU_TRY_PAGE: ${RCU_TRY_PAGE:-false}
     volumes:
       - ./work:/data/work:ro
       - ${RCU_FILES_DIR:-./files}:/data/files:ro

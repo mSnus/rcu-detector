@@ -5,11 +5,12 @@ Photograph a TV remote control, identify its model from a catalog of
 
 Read `docs/rcu-identifier-implementation-plan.md` for the full design, and
 `rcu-session-01/SESSION-01.md`, `service-python/SESSION-02.md`,
-`service-python/SESSION-03.md`, `service-python/SESSION-04.md` and
-`service-python/SESSION-05.md` for status and known-bad behaviour. Session 05
-is the current one. Session 04 corrects two claims session 03 made; session 05
-retires the memory constraint that shaped sessions 03 and 04, so treat any
-`--ocr-width 800` advice in those two as historical.
+`service-python/SESSION-03.md`, `service-python/SESSION-04.md`,
+`service-python/SESSION-05.md` and `service-python/SESSION-06.md` for status
+and known-bad behaviour. Session 06 is the current one. Session 04 corrects two
+claims session 03 made; session 05 retires the memory constraint that shaped
+sessions 03 and 04, so treat any `--ocr-width 800` advice in those two as
+historical.
 
 ## Approach
 
@@ -49,6 +50,13 @@ python scripts/match_eval.py  --fp ../work/fp --index ../work/index/tokens.npz
 # match_eval above never uploads anything and cannot see query-path bugs.
 python scripts/query_drift.py --photos ../photos --fp ../work/fp
 
+# ask what a confidence band actually promises: uploads every catalog photo,
+# then sweeps the thresholds and reports the precision each one would buy.
+# Needs a catalog with confusable records; a small clean sample returns 100%
+# in every band and tells you nothing.
+python scripts/calibrate_bands.py --photos ../files --manifest ../work/primary.txt \
+    --fp ../work/fp --csv ../work/bands.csv
+
 # assert the decode invariant (build and service agree; decoding is stable).
 # Run over any new catalog drop; exits non-zero on violation.
 python scripts/check_decode.py --dir ../photos
@@ -63,7 +71,12 @@ RCU_INTERNAL_TOKEN=... RCU_INDEX_PATH=../work/index/tokens.npz \
 # tell the running service to reload its index
 cd backend-laravel
 php artisan rcu:import-catalog --prune --reindex
-php artisan test                        # 61; 5 need the service running
+php artisan test                        # 71; 5 need the service running
+
+# the phone test page. No auth -- dev boxes only, never anywhere public.
+# Set RCU_TRY_PAGE=true in .env (host) and docker-compose reads it too, then
+# rebuild: `docker compose exec` runs the image, not the checkout.
+docker compose build laravel && docker compose up -d laravel   # -> /try
 
 # On the legacy catalogue: decide what to extract BEFORE extracting it, and
 # take metadata from the catalogue afterwards. files/ is a third non-remotes.
@@ -109,6 +122,12 @@ The import command warns when the two counts disagree.
   Wired end to end in session 5: `/api/identify`, feedback capture, the
   `rcu:import-catalog` command, and the admin visualiser at `/admin/rcu`
   (queries) and `/admin/rcu/catalog` (records, review queue, overlays).
+  Session 6 added `/try`, a phone-facing page that photographs a remote and
+  runs the real query path — it calls `/api/identify` and the feedback
+  endpoint as any client would, deliberately taking no shortcut through the
+  service. It has **no authentication** and is off unless `RCU_TRY_PAGE=true`.
+  Note the admin visualiser is currently unreachable on any box: it declares
+  `auth` middleware and this application has no login route at all.
 - MySQL holds the catalog; the token index lives in memory in the Python
   service, persisted as `.npz`.
 
@@ -322,13 +341,54 @@ These caused real bugs. Do not reintroduce them.
   own build output. Only `extract` writes to `work/`; `rcu-service` mounts it
   read-only, because the only writer in the Python tree is
   `scripts/build_index.py`.
+- A **thumbnail extracts confident buttons**, because rectification upscales
+  every body to `CFG.normalize.out_width` (400px) whatever the source was. A
+  16x50 imagecache thumbnail is enlarged 25x and `detect_buttons` traces the
+  interpolation artefacts: `2376.jpg` yielded **29 buttons** at quality 0.66,
+  indexed, and self-matched at 0.925. Nothing downstream can tell that from a
+  real extraction. `CFG.normalize.min_source_long_side` (600) refuses it at
+  the build. Long side, not both sides: a remote is elongated and the real
+  catalogue standard is 303x1090, so a square rule discards 52 of the 62
+  usable images in the dev sample.
+- A **constant score across many different records is not a score.** 41 of 91
+  queries in the first band calibration returned exactly 0.9250 and 7 exactly
+  0.3750. That, and 100% precision in *every* band including `low`, and
+  separation +0.559 where the real set gives +0.077, all had one cause: 72 of
+  the 91 queries were thumbnails. Before believing a retrieval metric, look at
+  the distribution of the scores, not just their mean.
+- A record with **zero buttons and zero text regions has no tokens**, so it can
+  never be retrieved by anything, yet it still costs a catalog row, an index
+  doc and a fingerprint file. 29 of 109 were like this and the build called
+  every one of them `1 remote(s) extracted`. Refuse them at extraction and
+  count them, with the source dimensions in the reason — the dimensions are
+  what identifies the cause.
 - **`docker compose exec` runs the image, not the checkout.** A measurement
   taken against a stale container is a measurement of old code: the first run
   of the legacy import here reported 165 of 165 unmatched, which was the
   pre-fix nid keying still baked into an image built before the fix landed.
   `docker compose build laravel` before believing any number from `exec`.
 
-## Next up (session 6)
+## Next up (session 7)
+
+Session 6 took session 5's item 3 (re-validate the bands) and found the corpus
+it would have been validated on was three quarters imagecache thumbnails. See
+`service-python/SESSION-06.md`. The bands are still uncalibrated — deliberately,
+because 19 records with zero wrong answers cannot calibrate a precision.
+
+1. **Low-contrast keycap detection (plan 9.1)** — unchanged, still the only
+   substantial CV item.
+2. **Calibrate the bands on `rcud`**, where a catalog with confusable
+   neighbours exists. `scripts/calibrate_bands.py` is written and measured;
+   only the corpus is missing. Watch the new `too small` exclusion count: it
+   is the thing that reports whether the manifest resolved to usable
+   derivatives or to small ones.
+3. **The query path has no size floor.** The build refuses a thumbnail now; the
+   service still accepts one and answers it confidently. Left alone on purpose
+   (it changes an API verdict, and a phone photograph is never that small), but
+   it is a real asymmetry between the two paths — the family of bug this
+   project keeps finding.
+
+## Previously (session 6's list, from session 5)
 
 Session 5 wired Laravel end to end, retired the memory ceiling, and found one
 real defect the offline pipeline structurally could not see: a truncated JPEG

@@ -66,6 +66,25 @@ return [
 
     /*
     |---------------------------------------------------------------------------
+    | Test page
+    |---------------------------------------------------------------------------
+    |
+    | An unauthenticated page at /try that photographs a remote and shows what
+    | the recogniser answers. It exists so the pipeline can be exercised from a
+    | phone against real remotes, which nothing else in this application does:
+    | the admin visualiser's upload runs extraction only, never matching.
+    |
+    | It has NO auth, so it is off unless a box asks for it. It serves catalog
+    | crops and match internals to anyone who can reach the URL, which is
+    | acceptable on a loopback dev box and is not acceptable anywhere public.
+    | Turning it on for rcud means putting auth in front of it first.
+    |
+    */
+
+    'try_page' => (bool) env('RCU_TRY_PAGE', false),
+
+    /*
+    |---------------------------------------------------------------------------
     | Catalog build artefacts
     |---------------------------------------------------------------------------
     |
