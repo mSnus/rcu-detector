@@ -292,6 +292,20 @@ These caused real bugs. Do not reintroduce them.
   manifest. **A rule enforced at the consuming end is not enforced.** The
   producing end is `rcu:legacy-manifest`; both ends now call
   `App\Support\LegacyCatalog::primaryPhotos()` so there is one definition.
+- The legacy `files/` directory is also **not where most of the photographs
+  are**. 3069 of 13773 originals survive; the other 10693 exist only as Drupal
+  imagecache derivatives, which is all the public site ever serves. Looking
+  only in `files/` builds a catalog of 22% of the catalogue and nothing says
+  so — the missing 78% look like ordinary "not on disk" lines. The manifest
+  searches `rcu.catalog.files_search_path` (original, then
+  `imagecache/watermark/files`, then `imagecache/product/files`; first hit
+  wins) and reaches 13763. Manifest lines are paths relative to `files/`, not
+  bare names. The stem is unchanged in a derivative, so the record still keys
+  onto its row — that is the whole reason the fallback is safe, and it is
+  pinned by a test. `watermark` is the largest preset Drupal keeps and has the
+  PULTOVNET stamp burned in, which is exactly what `RCU_WATERMARK_FILTER`
+  strips at the OCR boundary; do not turn that off while building from
+  derivatives.
 - Metadata that fails to match imports as **`title` and `model_id` NULL**,
   which is also what a genuine catalogue gap looks like. That is why the 56
   sat there unnoticed: nothing distinguishes "we extracted an instruction

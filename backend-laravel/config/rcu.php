@@ -105,6 +105,29 @@ return [
         */
         'files_dir' => env('RCU_LEGACY_FILES', base_path('../files')),
 
+        /*
+        | Where to look for a photograph, relative to files_dir, in order.
+        |
+        | On the live catalogue most originals are gone: `files/` holds 3069 of
+        | the 13773 catalogued photographs, and the other 10693 survive only as
+        | Drupal imagecache derivatives, which is also all the public site
+        | serves. Searching only files_dir reaches 22% of the catalogue;
+        | searching this chain reaches 13763 of 13773.
+        |
+        | Order matters — first hit wins, so the original comes first. The
+        | `watermark` preset is next because it is the largest Drupal keeps
+        | (up to 578x1503, 1.1x-3x the `product` preset). It has the PULTOVNET
+        | stamp burned into it, which is exactly what RCU_WATERMARK_FILTER
+        | strips at the OCR boundary; leave that filter on when using this.
+        */
+        'files_search_path' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env(
+                'RCU_LEGACY_SEARCH_PATH',
+                '.,imagecache/watermark/files,imagecache/product/files'
+            ))
+        ), fn ($p) => $p !== '')),
+
         // Link back to the source item page. {id} is the source node id,
         // stored as model_id. Templated so a domain change is a config edit.
         'item_url' => env('RCU_ITEM_URL', 'https://pultov.net/item/{id}'),

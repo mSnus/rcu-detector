@@ -35,7 +35,9 @@ mkdir -p "$OUT"
 if [ -n "$MANIFEST" ]; then
     [ -f "$MANIFEST" ] || { echo "manifest not found: $MANIFEST" >&2; exit 2; }
 
-    # One basename per line, as rcu:legacy-manifest writes it. A name that is
+    # One path per line, relative to $PHOTOS, as rcu:legacy-manifest writes
+    # it -- not a bare basename: most originals are gone from files/ and the
+    # manifest points at the imagecache derivative instead. A path that is
     # not on disk is dropped here *and counted*: a build that quietly extracts
     # fewer records than the catalogue lists is how a catalog loses rows.
     absent=0

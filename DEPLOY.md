@@ -218,6 +218,28 @@ produce them. Every diagnostic goes to stderr, so the redirect above captures
 the list and nothing else; run it without redirecting to see what was excluded
 and which catalogued photographs are missing from disk.
 
+**Most originals are gone.** On the live catalogue `files/` holds 3069 of the
+13773 catalogued photographs; the other 10693 survive only as Drupal
+imagecache derivatives, which is also all the public site serves. A manifest
+that looked only in `files/` would reach 22% of the catalogue — a sample, not
+a catalog. So each name is searched down `rcu.catalog.files_search_path`
+(`RCU_LEGACY_SEARCH_PATH`), first hit wins:
+
+```
+.                            the original, always preferred
+imagecache/watermark/files   largest preset Drupal keeps, up to 578x1503
+imagecache/product/files
+```
+
+That reaches 13763 of 13773. Manifest lines are therefore paths *relative to
+the files directory*, not bare filenames, and the command prints how many came
+from each — a build drawing mostly on imagecache is working from derivatives,
+which is a fact about the whole catalog and invisible once extraction has run.
+The basename stem is the same either way, so a record extracted from a
+derivative still keys onto its catalogue row. The `watermark` preset has the
+PULTOVNET stamp burned in; leave `RCU_WATERMARK_FILTER` on, it strips it at
+the OCR boundary.
+
 The manifest and the import must come from the same read of the catalogue. Both
 go through `App\Support\LegacyCatalog::primaryPhotos()` so they cannot define
 "the product's photo" differently; regenerate the manifest if the catalogue

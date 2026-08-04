@@ -20,11 +20,18 @@ use Symfony\Component\Console\Output\OutputInterface;
  * So the database decides what to extract, here, and the build reads the
  * answer from a file:
  *
- *     php artisan rcu:legacy-manifest --out=/data/work/primary.txt
+ *     php artisan rcu:legacy-manifest --out=- > work/primary.txt
  *     docker compose --profile build run --rm extract --manifest /data/work/primary.txt
  *
  * Measured on the 100-product sample: 100 primary photographs against 86
  * further images that are not remotes.
+ *
+ * Lines are paths relative to the files directory, not bare filenames, because
+ * on the live catalogue most originals have been deleted and only Drupal's
+ * imagecache derivatives remain -- 3069 originals against 10693 that exist
+ * only under imagecache. See `files_search_path` in config/rcu.php. The stem
+ * of the basename is unchanged either way, so a record extracted from a
+ * derivative still keys onto its catalogue row.
  */
 class LegacyManifestCommand extends Command
 {
@@ -47,15 +54,23 @@ class LegacyManifestCommand extends Command
         // it; dropping the image here would lose a real remote as well.
         $names = $rows->pluck('basename')->unique()->sort()->values();
 
+        $searchPath = config('rcu.catalog.files_search_path') ?: ['.'];
+
         $present = [];
         $missing = [];
+        $foundIn = [];
 
         foreach ($names as $name) {
-            if (is_file($filesDir . '/' . $name)) {
-                $present[] = $name;
-            } else {
+            $path = $this->locate($filesDir, $searchPath, $name);
+
+            if ($path === null) {
                 $missing[] = $name;
+                continue;
             }
+
+            $present[] = $path;
+            $dir = dirname($path);
+            $foundIn[$dir] = ($foundIn[$dir] ?? 0) + 1;
         }
 
         $list = implode("\n", $present) . "\n";
@@ -74,11 +89,23 @@ class LegacyManifestCommand extends Command
         }
 
         $where = $out === '-' ? 'stdout' : $out;
-        $this->report('<info>' . count($present) . " photograph(s) written to {$where}</info>");
+        $this->report('<info>' . count($present) . ' of ' . count($names)
+            . " catalogued photograph(s) written to {$where}</info>");
+
+        // Which directory each one came from. Worth printing every time: a
+        // build drawing mostly on imagecache is working from derivatives
+        // rather than originals, which is a fact about the whole catalog and
+        // is otherwise invisible once extraction has run.
+        ksort($foundIn);
+
+        foreach ($foundIn as $dir => $count) {
+            $this->report(sprintf('  %6d from %s', $count, $dir === '.' ? $filesDir : $dir));
+        }
 
         if ($missing !== []) {
             $this->report('<comment>' . count($missing)
-                . " listed photograph(s) are not in {$filesDir}:</comment>");
+                . ' photograph(s) are on no search path under '
+                . "{$filesDir}:</comment>");
 
             foreach (array_slice($missing, 0, 10) as $name) {
                 $this->report("  {$name}");
@@ -91,14 +118,39 @@ class LegacyManifestCommand extends Command
     }
 
     /**
-     * What is on disk but not in the manifest.
+     * The first search-path directory holding this photograph, as a path
+     * relative to $filesDir -- or null if it is on none of them.
+     *
+     * @param  list<string>  $searchPath
+     */
+    private function locate(string $filesDir, array $searchPath, string $name): ?string
+    {
+        foreach ($searchPath as $dir) {
+            $dir = trim($dir, '/');
+            $relative = ($dir === '' || $dir === '.') ? $name : $dir . '/' . $name;
+
+            if (is_file($filesDir . '/' . $relative)) {
+                return $relative;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * What is in the top level of the photo directory but not in the manifest.
      *
      * This is the number the command exists for, so it is always reported:
      * silently extracting a third more images than the catalogue can key is
      * exactly the failure this prevents, and it is invisible afterwards --
      * the extra records look like ordinary metadata misses.
      *
-     * @param  list<string>  $present
+     * Only the top level, deliberately. The search path reaches into
+     * imagecache, where the live site keeps ~96k derivative files across six
+     * presets; walking those to report them as "excluded" would say nothing
+     * useful and cost a full tree scan.
+     *
+     * @param  list<string>  $present  paths relative to $filesDir
      */
     private function reportExcluded(string $filesDir, array $present): void
     {
@@ -108,7 +160,9 @@ class LegacyManifestCommand extends Command
             return;
         }
 
-        $keep = array_flip($present);
+        // Keyed on basename: locate() prefers the top level, so anything
+        // taken from a search-path directory is not also up here.
+        $keep = array_flip(array_map('basename', $present));
         $excluded = [];
 
         foreach ($onDisk as $path) {

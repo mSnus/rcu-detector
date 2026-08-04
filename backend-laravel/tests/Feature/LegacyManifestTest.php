@@ -34,6 +34,9 @@ class LegacyManifestTest extends TestCase
 
         config([
             'rcu.catalog.files_dir' => $this->filesDir,
+            'rcu.catalog.files_search_path' => [
+                '.', 'imagecache/watermark/files', 'imagecache/product/files',
+            ],
             'database.connections.legacy' => [
                 'driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '',
             ],
@@ -78,6 +81,7 @@ class LegacyManifestTest extends TestCase
     private function onDisk(string ...$names): void
     {
         foreach ($names as $name) {
+            File::ensureDirectoryExists(dirname($this->filesDir . '/' . $name));
             File::put($this->filesDir . '/' . $name, 'x');
         }
     }
@@ -152,10 +156,75 @@ class LegacyManifestTest extends TestCase
         $this->onDisk('a.jpg');
 
         $this->artisan("rcu:legacy-manifest --out={$this->out}")
-            ->expectsOutputToContain('1 listed photograph(s) are not in')
+            ->expectsOutputToContain('1 photograph(s) are on no search path')
             ->assertSuccessful();
 
         $this->assertSame(['a.jpg'], $this->manifest());
+    }
+
+    /**
+     * On the live catalogue most originals have been deleted: 3069 of 13773
+     * photographs are still in files/, and 10693 exist only as Drupal
+     * imagecache derivatives. Searching files/ alone reaches 22% of the
+     * catalogue, which is the difference between a catalog and a sample.
+     */
+    public function test_it_falls_back_to_the_imagecache_derivative(): void
+    {
+        $this->product(1508, 'MYSTERY MMD-3601', [0 => [11, 'a.jpg', 'files/a.jpg']]);
+        $this->onDisk('imagecache/watermark/files/a.jpg');
+
+        $this->artisan("rcu:legacy-manifest --out={$this->out}")->assertSuccessful();
+
+        $this->assertSame(['imagecache/watermark/files/a.jpg'], $this->manifest());
+    }
+
+    /**
+     * First hit wins and the original is first, because the derivative is
+     * smaller and has the source watermark burned into it.
+     */
+    public function test_the_original_wins_over_a_derivative(): void
+    {
+        $this->product(1508, 'MYSTERY MMD-3601', [0 => [11, 'a.jpg', 'files/a.jpg']]);
+        $this->onDisk('a.jpg', 'imagecache/watermark/files/a.jpg');
+
+        $this->artisan("rcu:legacy-manifest --out={$this->out}")->assertSuccessful();
+
+        $this->assertSame(['a.jpg'], $this->manifest());
+    }
+
+    /**
+     * The watermark preset is preferred over `product`: it is the largest
+     * Drupal keeps, 1.1x-3x the other.
+     */
+    public function test_the_search_path_is_tried_in_order(): void
+    {
+        $this->product(1508, 'MYSTERY MMD-3601', [0 => [11, 'a.jpg', 'files/a.jpg']]);
+        $this->onDisk(
+            'imagecache/product/files/a.jpg',
+            'imagecache/watermark/files/a.jpg',
+        );
+
+        $this->artisan("rcu:legacy-manifest --out={$this->out}")->assertSuccessful();
+
+        $this->assertSame(['imagecache/watermark/files/a.jpg'], $this->manifest());
+    }
+
+    /**
+     * A record extracted from a derivative must still key onto its catalogue
+     * row. It does, because record_id is built from the basename's stem and
+     * the derivative keeps the name -- but that is the entire reason the
+     * fallback is safe, so it is pinned rather than assumed.
+     */
+    public function test_a_derivative_keeps_the_stem_the_import_keys_on(): void
+    {
+        $this->product(1508, 'MYSTERY MMD-3601', [0 => [11, 'a.jpg', 'files/MMD-3601_all.jpg']]);
+        $this->onDisk('imagecache/watermark/files/MMD-3601_all.jpg');
+
+        $this->artisan("rcu:legacy-manifest --out={$this->out}")->assertSuccessful();
+
+        $line = $this->manifest()[0];
+        $this->assertSame('imagecache/watermark/files/MMD-3601_all.jpg', $line);
+        $this->assertSame('MMD-3601_all', pathinfo(basename($line), PATHINFO_FILENAME));
     }
 
     /**
