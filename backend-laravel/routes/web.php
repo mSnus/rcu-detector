@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AdminVisualiserController;
+use App\Http\Controllers\LoginController;
 use App\Http\Controllers\TryController;
 use Illuminate\Support\Facades\Route;
 
@@ -22,6 +23,19 @@ Route::get('/', function () {
 Route::get('/try', [TryController::class, 'index'])->name('rcu.try');
 Route::get('/try/photo/{recordId}', [TryController::class, 'photo'])
     ->where('recordId', '[A-Za-z0-9._-]+')->name('rcu.try.photo');
+
+/*
+| Session login.
+|
+| The route MUST be named `login`: that is the name Laravel's `auth` middleware
+| redirects an unauthenticated request to, and without it the admin group below
+| threw a RouteNotFoundException and returned 500 in production rather than a
+| form. Throttled because a login form on a public host is a password oracle.
+*/
+Route::get('/login', [LoginController::class, 'show'])->name('login');
+Route::post('/login', [LoginController::class, 'store'])
+    ->middleware('throttle:10,1')->name('login.store');
+Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
 
 /*
 | Admin visualiser (plan 6.5).

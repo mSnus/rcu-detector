@@ -146,6 +146,20 @@ The page states the catalog size on its face. With 21 records almost every real
 remote comes back `none`, and without that line it reads as a broken
 recogniser rather than an empty catalog.
 
+## Stale catalog backups
+
+Two remained of session 5's four, and the criterion was "keep the ones
+documenting a real behaviour change". Decided by diffing them against the
+current catalog rather than by reading their names:
+
+* `fp.bak-preflip` -- **5 of 21 differ**, `RM-L859-1_0` 1 -> 4 buttons and
+  `RM-PJ20_big_light_0` 16 -> 18. That is the CLAHE rotation fix. Kept.
+* `fp.bak-predecode` -- **21 of 21 identical**. Dropped. Worth noting why it is
+  empty of information rather than just deleting it: the truncated-JPEG bug was
+  nondeterministic and lived on the query path, so it never altered a stored
+  fingerprint on this sample. The backup was taken against the right suspicion
+  and the fix landed somewhere else.
+
 ## Carried forward
 
 1. **Low-contrast keycap detection (plan 9.1)** — unchanged, still the only
