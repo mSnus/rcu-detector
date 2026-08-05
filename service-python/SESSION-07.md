@@ -327,6 +327,58 @@ Live latency on `rcud` is 8-9 s against 11.9 s before, but the box is giving
 186% of its two cores to the extraction; the dev-box figure with everything
 warm is 3.4 s. Re-measure when the build lands.
 
+## Faster OCR: which lever, measured
+
+OCR is 51% of a query's extraction, and the profile put 1907 ms of 2134 ms
+inside onnxruntime's C++ inference. That settles the "rewrite it in Rust"
+question before it is asked: Python is ~10% of it, so a port can only reach
+that 10% unless it also changes the model or the runtime. The crates are real
+(`ocrs` 0.12.2 on `rten`, `oar-ocr` 0.9.0), but they would be a sidecar process
+with different models to revalidate, for the smaller half of the problem.
+
+**The runtime is the lever.** Same crops, same box, threads controlled:
+
+| | dev, one crop | rcud, 39 catalogue images |
+|---|---|---|
+| rapidocr-onnxruntime 1.3.24, PP-OCRv3 | 1438 ms, 29 regions | 2308 ms |
+| rapidocr-onnxruntime 1.4.4, PP-OCRv4 | 2621 ms, 34 regions | — |
+| rapidocr-openvino 1.4.4, PP-OCRv4 | **1336 ms, 34 regions** | **1497 ms (1.54x)** |
+
+OpenVINO is about twice onnxruntime on identical models and runs the newer ones
+faster than onnxruntime runs our older ones. Over those 39 catalogue images:
+**brand identical 39/39, model code identical 38/39, 789 regions against 784**
+— and the single difference is OpenVINO reading `LV3638` where onnxruntime read
+nothing, which is a gain rather than a contradiction. (Worth confirming that
+code against its title before celebrating: a *wrong* code is worth less than
+none.)
+
+It is also the only build that gains from a second core. onnxruntime is slower
+with two, which is what `CFG.ocr.threads = 1` has been encoding all along.
+
+**The input-size lever does not survive contact with the catalogue.** PP-OCR's
+`min`/736 default only ever upscales, so `det_limit_side_len` alone changes
+nothing — a round of measurements went into discovering that. `max` caps the
+long side and does reduce area:
+
+| | dev, 18 photographs | rcud, 12 catalogue crops |
+|---|---|---|
+| min/736 | 2134 ms, brand+code 18/18 | 5011 ms, 12/12 |
+| max/960 | 1604 ms (1.33x), **18/18** | 3111 ms (1.61x), **10/12** |
+| max/800 | 1153 ms (1.85x), 17/18 | — |
+
+Phone photographs tolerate the downscale; the catalogue's own images, which are
+already ~270x1090 before rectification, do not. **Not adopted.**
+
+A first version of that sweep called the engine directly and reported 2.8x. The
+real path bands the crop first, so the bands were already under the cap and the
+true figure is 1.33x. Measure the pipeline, not the component.
+
+Both are selectable and neither is the default (`RCU_OCR_ENGINE`,
+`CFG.ocr.det_limit_*`), because either changes what the pipeline reads and
+therefore changes fingerprints. A catalogue built under one engine and queried
+under another is the asymmetry this project keeps finding. Adopt OpenVINO on
+both paths at once, with a rebuild behind it.
+
 ## Carried forward
 
 1. **Low-contrast keycap detection (plan 9.1)** — steps 1 and 2's *tooling* are
