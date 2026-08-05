@@ -96,10 +96,56 @@ echo "extracting in batches of $BATCH, $JOBS at a time"
 # Each worker handles at most $BATCH images and then exits, so memory is bounded
 # per batch rather than per image. Raise --jobs only as far as
 # (available RAM / ~800 MB) allows.
+set +e
 printf '%s\0' "${images[@]}" \
   | xargs -0 -P "$JOBS" -n "$BATCH" python scripts/extract_one.py --out "$OUT" \
-        "${extra[@]}" \
-  || echo "one or more images failed; see $OUT/skipped.txt"
+        "${extra[@]}"
+xargs_rc=$?
+set -e
+
+# xargs exit codes are not interchangeable and this script used to treat them
+# as if they were. 123 means some individual invocations failed and the rest
+# ran -- a few bad images, carry on. **125 means a worker was killed by a
+# signal and xargs abandoned everything after it.**
+#
+# That happened on the first full run: a worker was OOM-killed 20 hours in,
+# xargs stopped, this line printed "one or more images failed", the script went
+# on to build an index over the partial set and reported `done`. 4485 of 13763
+# images -- a third of the catalogue -- had never been attempted, and nothing
+# in the output said so. A build that stops early must not look like a build
+# that finished.
+if [ "$xargs_rc" -eq 125 ] || [ "$xargs_rc" -gt 128 ]; then
+    echo >&2
+    echo "ABORTED: a worker was killed by a signal (xargs rc=$xargs_rc)." >&2
+    echo "Everything after that point was never attempted. The usual cause is" >&2
+    echo "the OOM killer -- check dmesg and what else was running." >&2
+    aborted=1
+elif [ "$xargs_rc" -ne 0 ]; then
+    echo "one or more images failed; see $OUT/skipped.txt"
+fi
+
+# The completeness check, independent of exit codes: every manifest image must
+# have produced either a fingerprint or a line in skipped.txt. Counted here
+# because this is the only place that knows what was asked for.
+python - "$OUT" <<'PY'
+import glob, os, sys
+out = sys.argv[1]
+done = {os.path.basename(f).rsplit("_", 1)[0] for f in glob.glob(f"{out}/fp/*.json")}
+skipped = set()
+if os.path.exists(f"{out}/skipped.txt"):
+    for line in open(f"{out}/skipped.txt"):
+        parts = line.split()
+        if parts:
+            skipped.add(os.path.splitext(os.path.basename(parts[0]))[0])
+print(f"accounted for: {len(done)} extracted, {len(skipped)} excluded")
+PY
+
+if [ "${aborted:-0}" -eq 1 ]; then
+    echo >&2
+    echo "NOT indexing a partial catalogue. Re-run over what is missing:" >&2
+    echo "  the images with neither a fingerprint nor a skipped.txt line" >&2
+    exit 1
+fi
 
 # Each worker appends its own reason, and one process per image means nothing
 # ever prints a total. Say here what the build refused and why: at 13k images
