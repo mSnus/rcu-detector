@@ -100,6 +100,11 @@
         Upload a photo
         <input type="file" id="upload" accept="image/*">
     </label>
+    {{-- Stated before the choice, not after the failure. The limit is the
+         server's own, so the two cannot drift. --}}
+    <p class="dim" style="margin: 8px 0 0; text-align: center">
+        JPEG, PNG or WebP, up to {{ round($maxUploadKb / 1024, 1) }} MB.
+    </p>
     <div id="preview" hidden style="margin-top: 12px">
         <img class="shot" id="previewImg" alt="">
         <div style="margin-top: 10px; display: flex; gap: 8px">
@@ -168,8 +173,13 @@ function esc(s) {
 
 async function identify() {
     if (!file) return;
+    // In MB, because the limit is stated in MB and a number the user cannot
+    // compare to the one above it is not a message.
     if (file.size > MAX_KB * 1024) {
-        say(`That photo is ${Math.round(file.size / 1024)} KB; the limit is ${MAX_KB} KB.`, 'err');
+        const mb = n => (n / 1024 / 1024).toFixed(1);
+        say(`That photo is ${mb(file.size)} MB and the limit is ${mb(MAX_KB * 1024)} MB.`
+            + ' <span class="dim">Most phones can send a smaller one from the'
+            + ' gallery, or try the camera button.</span>', 'err');
         return;
     }
 
@@ -179,39 +189,88 @@ async function identify() {
     const body = new FormData();
     body.append('photo', file);
 
-    let res, data;
+    let res;
     try {
         // No top_k here: the endpoint takes it from config (rcu.top_k), and a
         // query parameter that silently does nothing is worse than none.
         res = await fetch('/api/identify', {
             method: 'POST', body, headers: {'Accept': 'application/json'},
         });
-        data = await res.json();
     } catch (e) {
         // Never reached the application at all.
-        say('Could not reach the server: ' + esc(e.message), 'err');
+        say('Could not reach the server: ' + esc(e.message)
+            + ' <span class="dim">Check the connection and try again.</span>', 'err');
         $('send').disabled = false;
         return;
+    }
+
+    /* Parsed separately from the request. The errors that matter most here do
+       NOT come back as JSON -- nginx answers an oversized body with an HTML
+       413 and PHP-FPM an HTML 502 -- and parsing inside the try above reported
+       both as "could not reach the server", which is the one thing they are
+       not. */
+    let data = {};
+    try {
+        data = await res.json();
+    } catch (e) {
+        data = {};
     }
 
     $('send').disabled = false;
 
     /* A 4xx is a verdict on the photograph and is identical next time; a 5xx
-       is about the service. Telling the user to retry the first is how a
-       decode bug spent a session disguised as an outage. */
-    if (res.status === 422) {
-        say(esc(data.message || 'That image could not be read.')
-            + ' <span class="dim">Retrying the same file will not help &mdash; take another photo.</span>', 'err');
-        return;
-    }
-    if (!res.ok) {
-        say(esc(data.message || `Server error (${res.status}).`)
-            + ' <span class="dim">This one is worth retrying.</span>', 'err');
+       is about the service. Telling the user to retry the first is how a decode
+       bug spent a session disguised as an outage. Each branch says what the
+       user can actually do about it -- "an error occurred" is not a message. */
+    const retry = ' <span class="dim">This one is worth retrying.</span>';
+    const useless = ' <span class="dim">Retrying the same file will not help.</span>';
+
+    if (res.ok) {
+        requestId = data.request_id;
+        render(data);
         return;
     }
 
-    requestId = data.request_id;
-    render(data);
+    if (res.status === 413) {
+        // The server refused the body outright, before any application code.
+        say(`That photo is too large for the server (${(file.size / 1024 / 1024).toFixed(1)} MB).`
+            + useless, 'err');
+        return;
+    }
+    if (res.status === 422) {
+        say(esc(data.message || 'That image could not be read.')
+            + ' <span class="dim">Retrying the same file will not help &mdash;'
+            + ' take another photo, closer and better lit.</span>', 'err');
+        return;
+    }
+    if (res.status === 429) {
+        say('Too many requests just now.'
+            + ' <span class="dim">Wait a few seconds and try again.</span>', 'err');
+        return;
+    }
+    if (res.status === 401 || res.status === 403 || res.status === 419) {
+        say('The server rejected the request as unauthorised.'
+            + ' <span class="dim">Reload the page and try again.</span>', 'err');
+        return;
+    }
+    if (res.status === 404) {
+        say('The identify endpoint is missing (404).'
+            + ' <span class="dim">The deployment is wrong, not the photo.</span>', 'err');
+        return;
+    }
+    if (res.status === 503) {
+        say(esc(data.message || 'The recognition service is not answering.')
+            + retry, 'err');
+        return;
+    }
+    if (res.status >= 500) {
+        // 502/504 come from nginx as HTML, so data.message is usually absent
+        // and the status is the only thing there is to say.
+        say(esc(data.message || `The server failed (${res.status}).`) + retry, 'err');
+        return;
+    }
+
+    say(esc(data.message || `The request was refused (${res.status}).`) + useless, 'err');
 }
 
 function render(data) {

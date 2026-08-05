@@ -56,6 +56,15 @@ class TryPageTest extends TestCase
         $this->assertStringContainsString('id="upload"', $html);
     }
 
+    public function test_it_states_the_size_limit_before_the_choice(): void
+    {
+        // The limit has to come from config, or the page and the server drift
+        // and the page becomes confidently wrong about the reason for a refusal.
+        config(['rcu.max_upload_kb' => 20480]);
+
+        $this->get('/try')->assertOk()->assertSee('up to 20 MB', false);
+    }
+
     public function test_candidate_images_use_a_path_not_an_absolute_url(): void
     {
         // Behind a TLS-terminating proxy an absolute URL comes out as http://
