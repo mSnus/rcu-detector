@@ -82,13 +82,45 @@ def _correspondences(q_buttons: list[dict],
     fit. A one-to-one constraint costs a sort over at most a few thousand
     pairs and makes the inlier count mean what it says.
     """
-    pairs = []
-    for i, qb in enumerate(q_buttons):
-        for j, cb in enumerate(c_buttons):
-            cost = _pair_cost(qb, cb)
-            if cost is not None:
-                pairs.append((cost, i, j))
-    pairs.sort()
+    # The cost matrix, in numpy rather than a Python double loop. This is the
+    # hot spot of the whole query: _pair_cost was called 320,058 times for one
+    # 8262-record match -- 156 candidates, each verified both ways up, each a
+    # few thousand button pairs -- and accounted for 1.0 s of the 1.3 s the
+    # match took. `_pair_cost` and `_size_compatible` are kept as the readable
+    # statement of the rule and as the reference the equality check compares
+    # against; they are no longer on the hot path.
+    #
+    # The ordering must match the old `pairs.sort()` exactly, ties included, or
+    # a different one-to-one assignment comes out of the greedy loop below and
+    # inlier counts move for reasons no one can trace. sort() on (cost, i, j)
+    # breaks ties by i then j, which is np.lexsort with cost as the last key.
+    cfg = CFG.verify
+    if not q_buttons or not c_buttons:
+        pairs = []
+    else:
+        q = np.array([[float(b["x"]), float(b["y"]), float(b["w"]), float(b["h"])]
+                      for b in q_buttons], dtype=np.float64)
+        c = np.array([[float(b["x"]), float(b["y"]), float(b["w"]), float(b["h"])]
+                      for b in c_buttons], dtype=np.float64)
+
+        dist = np.hypot(q[:, None, 0] - c[None, :, 0],
+                        q[:, None, 1] - c[None, :, 1])
+
+        qa = np.maximum(q[:, 2] * q[:, 3], 1e-9)
+        ca = np.maximum(c[:, 2] * c[:, 3], 1e-9)
+        ratio = np.maximum(qa[:, None] / ca[None, :], ca[None, :] / qa[:, None])
+
+        ok = (dist <= cfg.max_pair_dist) & (ratio <= cfg.max_size_ratio ** 2)
+
+        q_col = np.array([b.get("color", "grey") for b in q_buttons], dtype=object)
+        c_col = np.array([b.get("color", "grey") for b in c_buttons], dtype=object)
+        cost = dist + np.where(q_col[:, None] != c_col[None, :],
+                               cfg.color_mismatch_cost, 0.0)
+
+        ii, jj = np.nonzero(ok)
+        cc = cost[ii, jj]
+        order = np.lexsort((jj, ii, cc))
+        pairs = list(zip(cc[order], ii[order], jj[order]))
 
     used_q: set[int] = set()
     used_c: set[int] = set()

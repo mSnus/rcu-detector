@@ -60,7 +60,17 @@ def extract_remotes(img: np.ndarray, ensemble: bool = True,
     out: list[ExtractedRemote] = []
 
     bodies = detect_bodies(img)
-    mask = _foreground_mask(img)
+    # NOT computed here. The mask is used by exactly one thing -- the "fg mask"
+    # panel in debug_panel -- and that already recomputes it when the field is
+    # None. Computing it eagerly ran the most expensive single operation in the
+    # pipeline a second time on every extraction, including every query that
+    # never asks for an overlay: 913 ms of the 4300 ms a 12.6 MP phone
+    # photograph takes, measured, for an image that is usually discarded.
+    #
+    # detect_bodies computes the same mask internally from the same input; if
+    # this ever needs to be free rather than lazy, have it return the one it
+    # chose rather than calling _foreground_mask twice.
+    mask = None
     body_overlay = dbg.draw_bodies(img, bodies)
 
     for idx, body in enumerate(bodies):
