@@ -7,6 +7,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
+# Above the application's own limit -- see the file. The image default is 2M,
+# which is under any phone photograph.
+COPY docker/uploads.ini /usr/local/etc/php/conf.d/zz-uploads.ini
+
 WORKDIR /srv/app
 
 COPY composer.json composer.lock ./
