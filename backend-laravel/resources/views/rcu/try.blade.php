@@ -338,7 +338,7 @@ function render(data) {
     const band = data.confidence || 'none';
 
     say(`<span class="tag ${esc(band)}">${esc(band)}</span> `
-        + (data.hint ? `<span class="dim">hint: ${esc(data.hint)}</span>` : '')
+        + (data.hint ? `<span class="dim">${esc(hintText(data.hint))}</span>` : '')
         + `<div class="stats">`
         + `${ex.button_count ?? '—'} buttons`
         + ` &middot; brand <code>${esc(ex.brand ?? '—')}</code>`
@@ -388,6 +388,27 @@ function render(data) {
 
     box.hidden = false;
     wireFeedback();
+}
+
+/* The service returns a hint as a token, because it is an API and an enum is
+   what an API should return. Turning it into a sentence is the client's job,
+   and printing the token instead -- "hint: photograph_back" -- tells the user
+   nothing and reads like a leaked internal.
+
+   It also has to say *another photo*, not a second one: there is no two-image
+   flow, and the wording implied there was. */
+const HINTS = {
+    // The model code is the highest-precision signal the matcher has, and this
+    // query carried none. On most remotes it is printed on the back, but on
+    // plenty -- this Samsung included -- it is on the front near the bottom.
+    photograph_back: 'No model code was readable. Try another photo showing the '
+        + 'printed code — usually on the back, sometimes below the buttons.',
+    reshoot: 'Try another photo: fill the frame with the remote, straight on, '
+        + 'in even light and without a strong shadow beside it.',
+};
+
+function hintText(h) {
+    return HINTS[h] || h;
 }
 
 /* `orientation` is an object, not a string: the two sides flip independently,
