@@ -176,6 +176,25 @@ if [ "$CATALOG_CODES" -eq 1 ]; then
     $COMPOSE --profile build run --rm --entrypoint python extract \
         scripts/apply_catalog_codes.py --fp "/data/work/$FP_NAME" \
             --titles /data/work/titles.tsv
+
+    # The service reads candidate fingerprints from RCU_FP_DIR, which is the
+    # live fp/ -- not the snapshot the index was built from. Patching only the
+    # snapshot therefore builds an index whose codes no candidate carries, and
+    # the model-code bonus silently never fires. The record ids matched, so the
+    # count check at the end passed and reported the two consumers "in step"
+    # while they disagreed about content: the same class of drift this script
+    # exists to catch, arriving through the one door it does not watch.
+    #
+    # Both directories get the same patch. For the ids they share the files are
+    # otherwise identical -- a record is extracted once and never rewritten --
+    # so this keeps them so.
+    if [ "$SNAPSHOT" -eq 1 ]; then
+        echo
+        echo "applying the same codes to the live fp/, which is what the service reads"
+        $COMPOSE --profile build run --rm --entrypoint python extract \
+            scripts/apply_catalog_codes.py --fp /data/work/fp \
+                --titles /data/work/titles.tsv
+    fi
 fi
 
 # --------------------------------------------------------------- 3. the index
