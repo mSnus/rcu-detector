@@ -242,6 +242,11 @@ def _bodies_from_mask(img: np.ndarray, mask: np.ndarray) -> list[dict]:
 
 
 def detect_bodies(img: np.ndarray) -> list[dict]:
+    """Bodies only. See `detect_bodies_with_mask` for the mask as well."""
+    return detect_bodies_with_mask(img)[0]
+
+
+def detect_bodies_with_mask(img: np.ndarray) -> tuple[list[dict], np.ndarray]:
     """Detect remote bodies using two segmentation strategies.
 
     Neither strategy wins everywhere. Lab colour-distance handles gradient and
@@ -268,13 +273,17 @@ def detect_bodies(img: np.ndarray) -> list[dict]:
             return (0, 0.0)
         return (len(bodies), sum(b["area_frac"] for b in bodies))
 
-    bodies = (otsu_bodies
-              if plausibility(otsu_bodies) > plausibility(lab_bodies)
-              else lab_bodies)
+    otsu_won = plausibility(otsu_bodies) > plausibility(lab_bodies)
+    bodies = otsu_bodies if otsu_won else lab_bodies
+    # The mask that was actually used, not always the Lab one. The debug panel
+    # is the project's main diagnostic and it showed the Lab mask regardless of
+    # which strategy won, so on an image where Otsu won it displayed a
+    # segmentation the pipeline had rejected.
+    mask = otsu_mask if otsu_won else lab_mask
 
     if not bodies and CFG.body.full_frame_fallback:
         bodies = _full_frame_body(img)
-    return bodies
+    return bodies, mask
 
 
 def _full_frame_body(img: np.ndarray) -> list[dict]:

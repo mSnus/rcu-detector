@@ -18,7 +18,7 @@ from app.config import CFG
 from app.pipeline import debug_render as dbg
 from app.pipeline.branding import find_brand, find_model_code
 from app.pipeline.color import classify_colors
-from app.pipeline.detect_body import detect_bodies, _foreground_mask
+from app.pipeline.detect_body import detect_bodies, detect_bodies_with_mask
 from app.pipeline.detect_buttons import detect_buttons
 from app.pipeline.fingerprint import build_fingerprint
 from app.pipeline.labels import assign_labels, suppress_text_detections
@@ -59,18 +59,14 @@ def extract_remotes(img: np.ndarray, ensemble: bool = True,
     """
     out: list[ExtractedRemote] = []
 
-    bodies = detect_bodies(img)
-    # NOT computed here. The mask is used by exactly one thing -- the "fg mask"
-    # panel in debug_panel -- and that already recomputes it when the field is
-    # None. Computing it eagerly ran the most expensive single operation in the
-    # pipeline a second time on every extraction, including every query that
-    # never asks for an overlay: 913 ms of the 4300 ms a 12.6 MP phone
-    # photograph takes, measured, for an image that is usually discarded.
-    #
-    # detect_bodies computes the same mask internally from the same input; if
-    # this ever needs to be free rather than lazy, have it return the one it
-    # chose rather than calling _foreground_mask twice.
-    mask = None
+    # The mask comes back from body detection rather than being computed
+    # again. It was computed twice on every extraction -- once inside
+    # detect_bodies and once here -- and the second one is read by exactly one
+    # thing, the "fg mask" panel in debug_panel. That was 913 ms of the 4300 ms
+    # a 12.6 MP phone photograph takes, measured, usually for an image that is
+    # then discarded; and making it lazy instead would only move the cost onto
+    # whoever asks for the overlay, which on this deployment is every query.
+    bodies, mask = detect_bodies_with_mask(img)
     body_overlay = dbg.draw_bodies(img, bodies)
 
     for idx, body in enumerate(bodies):
@@ -152,9 +148,14 @@ def debug_panel(img: np.ndarray, remote: ExtractedRemote,
     found, so it is part of the interface rather than a debugging afterthought
     -- the service exposes it at GET /debug/{request_id}.
     """
-    mask = remote.mask if remote.mask is not None else _foreground_mask(img)
+    # Both fall back to recomputing for a caller that built the ExtractedRemote
+    # itself, and both then come from the same run so the two panels cannot
+    # disagree about which segmentation was used.
+    if remote.mask is None or remote.body_overlay is None:
+        bodies, fresh = detect_bodies_with_mask(img)
+    mask = remote.mask if remote.mask is not None else fresh
     overlay = (remote.body_overlay if remote.body_overlay is not None
-               else dbg.draw_bodies(img, detect_bodies(img)))
+               else dbg.draw_bodies(img, bodies))
     panels = [img, mask, overlay, remote.crop,
               dbg.draw_buttons(remote.crop, remote.buttons)]
     captions = ["original", "fg mask", "body detect", "rectified",
