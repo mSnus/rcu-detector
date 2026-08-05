@@ -137,7 +137,11 @@ def _band(candidates: list[Candidate]) -> tuple[str, str | None]:
     if top > cfg.medium_score:
         return "medium", None
     if top > cfg.low_score:
-        return "low", "photograph_back"
+        # The hint is conditional on the query having no code, and that is not
+        # known here -- the caller applies it. Returning it unconditionally
+        # told a user whose photograph had *just* yielded BN59-01315B to go and
+        # photograph the model code.
+        return "low", None
     return "none", "reshoot"
 
 
@@ -224,7 +228,10 @@ class Matcher:
         confidence, hint = _band(out)
 
         # A query carrying no readable code has the most to gain from the
-        # "photograph the back" prompt, whatever band it landed in.
+        # "photograph the code" prompt, whatever band it landed in. One that
+        # already has a code has nothing to gain: the answer is uncertain for
+        # some other reason, and asking again for what was already supplied
+        # reads as the service not having looked.
         if hint is None and confidence != "high" and not q_code:
             hint = "photograph_back"
 
