@@ -197,8 +197,11 @@ class ImportCatalogCommand extends Command
             return self::SUCCESS;
         }
 
-        $this->warnOnIndexSkew($service, count($seen));
-
+        // Reload first, then compare. The other order asks the service for a
+        // count it is about to replace, so a correct --reindex run warns that
+        // the index is stale and tells the operator to do the thing it is
+        // doing -- which on a 7451-record import reads as a real failure and
+        // invites someone to redo the build.
         if ($this->option('reindex')) {
             try {
                 $result = $service->reindex();
@@ -209,6 +212,8 @@ class ImportCatalogCommand extends Command
                 return self::FAILURE;
             }
         }
+
+        $this->warnOnIndexSkew($service, count($seen));
 
         return self::SUCCESS;
     }
