@@ -582,7 +582,7 @@ class ServiceConfig:
     index_path: str = "/var/lib/rcu/index/tokens.npz"
     # keep this many recent debug overlays for GET /debug/{request_id}
     debug_cache_size: int = 32
-    max_upload_bytes: int = 20 * 1024 * 1024
+    max_upload_bytes: int = 24 * 1024 * 1024
     # query path budget; exceeding it is logged, not enforced
     target_latency_ms: int = 1000
 

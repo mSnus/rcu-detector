@@ -44,7 +44,7 @@ return [
     // The service refuses anything over its own max_upload_bytes; keep this at
     // or below that so an oversized file is rejected here, cheaply, with a
     // validation error rather than a 413 from loopback.
-    'max_upload_kb' => (int) env('RCU_MAX_UPLOAD_KB', 10240),
+    'max_upload_kb' => (int) env('RCU_MAX_UPLOAD_KB', 20480),
 
     // How many candidates to ask for. The picker shows these to the user and
     // every tap is a labelled training pair (plan 6.4).
