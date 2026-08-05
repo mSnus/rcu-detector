@@ -11,6 +11,7 @@
             --bg: #14161a; --panel: #1c1f26; --line: #2b3039;
             --ink: #e6e9ef; --dim: #98a1b0;
             --high: #3fb950; --medium: #d29922; --low: #db6d28; --none: #f85149;
+            --best: #d4af37;
         }
         * { box-sizing: border-box; }
         body {
@@ -75,6 +76,17 @@
         .cand .name { font-weight: 600; word-break: break-all; }
         .cand .name a { color: var(--ink); text-decoration: underline; }
         .cand .name a:hover { color: var(--high); }
+        /* The top group, marked out rather than merely first. On a phone the
+           list scrolls and "first" stops being visible; a border is still
+           visible with the heading off screen. */
+        .cand.best {
+            border: 2px solid var(--best); border-radius: 8px;
+            padding: 10px; margin-bottom: 10px;
+        }
+        .also {
+            font-size: 12px; color: var(--dim); text-transform: uppercase;
+            letter-spacing: .06em; margin: 4px 0 2px;
+        }
         .variant { margin-top: 8px; }
         .variant + .variant { border-top: 1px dashed var(--line); padding-top: 8px; }
         .variant a { color: var(--ink); }
@@ -370,7 +382,12 @@ function render(data) {
         return;
     }
 
-    box.innerHTML = groupByModel(cands).map(renderGroup).join('') + feedbackOnlyButton();
+    box.innerHTML = groupByModel(cands).map((g, i) =>
+        // The heading goes before the second group, not above a section that
+        // may be empty: with one candidate there is nothing else possible and
+        // an "Also possible:" with nothing under it reads as a failure to load.
+        (i === 1 ? '<div class="also">Also possible:</div>' : '') + renderGroup(g, i === 0)
+    ).join('') + feedbackOnlyButton();
 
     box.hidden = false;
     wireFeedback();
@@ -405,7 +422,7 @@ function groupByModel(cands) {
     return groups;
 }
 
-function renderGroup(g) {
+function renderGroup(g, best) {
     const top = g.members[0];
     const cat = top.catalog || {};
     /* The catalogue's own title first. brand/model_code are what the
@@ -456,7 +473,7 @@ function renderGroup(g) {
         </div>`;
     }).join('');
 
-    return `<div class="cand">
+    return `<div class="cand${best ? ' best' : ''}">
         <div class="shots">${photos}</div>
         <div class="meta">
             <div class="name">${link}</div>
