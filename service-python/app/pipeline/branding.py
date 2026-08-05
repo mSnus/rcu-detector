@@ -22,7 +22,19 @@ _BRANDS_FILE = Path(__file__).resolve().parents[1] / "data" / "brands.txt"
 # Two letter groups may precede the digits: RM-D1110, RM-PJ20R. With a single
 # group the prefix is silently dropped and RM-D1110 is stored as D1110, which
 # is a different remote's code as far as the index is concerned.
-MODEL_RE = re.compile(r"\b[A-Z]{1,5}(?:[- ][A-Z]{1,5})?[- ]?\d{2,6}[A-Z]{0,3}\b")
+#
+# The trailing group is Samsung's whole scheme -- BN59-01315B, AA59-00543A --
+# where a *second* digit group follows the separator. Without it the match
+# stops at "BN59", which names a family of hundreds of remotes rather than one,
+# and 642 of the 7431 catalogue titles carry a code in that shape.
+#
+# The tail requires a hyphen, never a space. With a space it swallows adjacent
+# numerals: a keypad reading "VOL 12 34" becomes the code "VOL-12-34". The
+# leading group keeps its space alternative because that is how "RM 530F" is
+# printed, and there the digits are the last thing on the line.
+MODEL_RE = re.compile(
+    r"\b[A-Z]{1,5}(?:[- ][A-Z]{1,5})?[- ]?\d{2,6}[A-Z]{0,3}(?:-\d{2,6}[A-Z]{0,3})?\b"
+)
 
 # Text that looks exactly like a model code but is a button legend. Every
 # entry here has been observed to be misread as a model code.
