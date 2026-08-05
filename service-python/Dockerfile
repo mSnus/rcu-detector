@@ -21,7 +21,14 @@ COPY requirements.txt ./
 # headless build pinned in requirements.txt, so it is installed without deps.
 RUN pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir --no-deps rapidocr-onnxruntime==1.3.24 \
-    && python -c "from rapidocr_onnxruntime import RapidOCR; RapidOCR()"
+    && pip install --no-cache-dir --no-deps rapidocr-openvino==1.4.4 \
+    # Both OCR packages depend on the full opencv build. Whichever landed last
+    # wins under the same `cv2` name, so put headless back on top explicitly --
+    # install.sh does the same, and the Dockerfile was relying on ordering.
+    && pip install --no-cache-dir --force-reinstall --no-deps \
+         opencv-python-headless==4.10.0.84 \
+    && python -c "from rapidocr_onnxruntime import RapidOCR; RapidOCR()" \
+    && python -c "from rapidocr_openvino import RapidOCR; RapidOCR()"
 
 COPY app ./app
 COPY scripts ./scripts

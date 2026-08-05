@@ -165,8 +165,16 @@ class OcrConfig:
     at a fraction of the footprint, so it is first here. Order is preference,
     not requirement: the first installed engine wins.
     """
-    engine_order: tuple = ("rapidocr", "paddle", "easyocr", "doctr",
-                           "tesseract")
+    #
+    # `openvino` is the same PP-OCR models under OpenVINO and is roughly twice
+    # as fast (see RapidOcrOpenvinoEngine), but it is deliberately NOT first:
+    # it reads more text than the onnxruntime build, so it changes
+    # fingerprints, and a catalogue built under one engine and queried under
+    # another is the asymmetry this project keeps finding. Put it first only
+    # together with a rebuild -- RCU_OCR_ENGINE=openvino does that for one
+    # process without editing this tuple.
+    engine_order: tuple = ("rapidocr", "openvino", "paddle", "easyocr",
+                           "doctr", "tesseract")
     # OCR the crop upscaled to at least this width. The 400px canonical crop
     # renders VOL as about 6px tall, which no engine reads.
     min_width: int = 1100
@@ -180,6 +188,32 @@ class OcrConfig:
     match_iou: float = 0.30
     # per-image ceiling; a crop yielding more than this is noise, not labels
     max_regions: int = 120
+
+    # --- how much image the detector actually sees ------------------------
+    # PP-OCR resizes before detection, and its own default is `min`/736, which
+    # only ever *upscales*: our 800x2346 crop is already above the floor, so it
+    # is detected at full size and det is ~75% of OCR time. `max` caps the long
+    # side instead, which is the only knob that reduces the area.
+    #
+    # Measured over the 18 dev photographs, same crops, brand and model code
+    # compared against the current setting:
+    #
+    #   min/736 (default)   1831 ms   420 regions   --
+    #   max/1600            1087 ms   403 regions   17/18 agree
+    #   max/1280             849 ms   401 regions   18/18 agree
+    #   max/960              668 ms   381 regions   17/18 agree
+    #
+    # 1280 is the knee. Note 1600 loses `RM-PJ20R` -> `RM-PJ20` where 1280 does
+    # not, so the effect is not monotone in the limit and 18 images is a small
+    # sample -- that trailing R is a different remote as far as the index
+    # cares, which is the same truncation the model-code regex was fixed for.
+    #
+    # NOT adopted by default: changing what the pipeline reads changes
+    # fingerprints, and a catalogue built under one setting and queried under
+    # another is the query/catalog asymmetry this project keeps finding.
+    # Change both paths together, with a rebuild behind it.
+    det_limit_type: str = "min"
+    det_limit_side_len: int = 736
     # OCR the crop in horizontal bands no taller than this. An upscaled
     # remote is ~1100x4500, and detection over the whole thing at once needs
     # more RAM than a small VM has. Bands also keep detection resolution high
@@ -639,6 +673,16 @@ def _apply_env_overrides(cfg: Config) -> None:
     port = os.environ.get("RCU_SERVICE_PORT")
     if port and port.isdigit():
         cfg.service.port = int(port)
+
+    # Which OCR engine to prefer. Belongs here rather than in code because
+    # switching it changes what the pipeline reads, so the build and the
+    # service must be given the same value in the same breath -- a
+    # per-deployment fact, not a tuning decision.
+    engine = os.environ.get("RCU_OCR_ENGINE")
+    if engine:
+        name = engine.strip().lower()
+        cfg.ocr.engine_order = (name,) + tuple(
+            n for n in cfg.ocr.engine_order if n != name)
 
     terms = os.environ.get("RCU_WATERMARK_TERMS")
     if terms is not None:

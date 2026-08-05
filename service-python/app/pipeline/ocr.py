@@ -125,6 +125,8 @@ class RapidOcrEngine(OcrEngine):
         from rapidocr_onnxruntime import RapidOCR
         n = CFG.ocr.threads
         self._ocr = RapidOCR(
+            det_limit_type=CFG.ocr.det_limit_type,
+            det_limit_side_len=CFG.ocr.det_limit_side_len,
             det_intra_op_num_threads=n, det_inter_op_num_threads=n,
             cls_intra_op_num_threads=n, cls_inter_op_num_threads=n,
             rec_intra_op_num_threads=n, rec_inter_op_num_threads=n)
@@ -133,6 +135,62 @@ class RapidOcrEngine(OcrEngine):
         H, W = img.shape[:2]
         # use_cls must follow CFG.ocr.angle_cls -- see the note there. Leaving
         # it at RapidOCR's default of True zeroes the orientation signal.
+        result, _ = self._ocr(img, use_cls=CFG.ocr.angle_cls)
+        out = []
+        for box, text, score in (result or []):
+            r = _region(box, text, score, W, H, self.name)
+            if r:
+                out.append(r)
+        return out
+
+
+class RapidOcrOpenvinoEngine(OcrEngine):
+    """The same PP-OCR models under OpenVINO instead of onnxruntime.
+
+    Measured on one 800x2346 crop, same input, threads controlled, on a KVM
+    guest with avx2 -- which is what both boxes are:
+
+        rapidocr-onnxruntime 1.3.24 (PP-OCRv3)   1438 ms, 29 regions
+        rapidocr-onnxruntime 1.4.4  (PP-OCRv4)   2621 ms, 34 regions
+        rapidocr-openvino    1.4.4  (PP-OCRv4)   1336 ms, 34 regions
+
+    So OpenVINO is roughly twice onnxruntime on identical models, and runs the
+    newer ones faster than onnxruntime runs the older ones -- more text, less
+    time. It is also the only one of the three that gets faster with a second
+    thread; onnxruntime is slower with two, which is why CFG.ocr.threads is 1.
+
+    **Switching engines changes what the pipeline reads**, so it changes
+    fingerprints: 34 regions against 29 is more labels, more tokens, possibly a
+    different brand or model code. A catalogue built under one engine and
+    queried under another is the query/catalog asymmetry this project keeps
+    finding, so this is not the default. Adopt it for both paths at once, with
+    a rebuild behind it.
+    """
+
+    name = "openvino"
+
+    @classmethod
+    def available(cls) -> bool:
+        try:
+            import rapidocr_openvino  # noqa: F401
+            return True
+        except Exception:
+            return False
+
+    def __init__(self) -> None:
+        from rapidocr_openvino import RapidOCR
+        # No thread arguments: this package does not take the per-model
+        # intra/inter options the onnxruntime one does. OpenVINO reads
+        # OMP_NUM_THREADS from the environment instead.
+        self._ocr = RapidOCR(
+            det_limit_type=CFG.ocr.det_limit_type,
+            det_limit_side_len=CFG.ocr.det_limit_side_len)
+
+    def read(self, img: np.ndarray) -> list[dict]:
+        H, W = img.shape[:2]
+        # use_cls must follow CFG.ocr.angle_cls, for the reason in the config:
+        # the classifier rotates each line upright and zeroes the orientation
+        # signal. Same trap in every PP-OCR wrapper.
         result, _ = self._ocr(img, use_cls=CFG.ocr.angle_cls)
         out = []
         for box, text, score in (result or []):
@@ -282,6 +340,7 @@ class TesseractEngine(OcrEngine):
 
 _ADAPTERS: dict[str, type[OcrEngine]] = {
     "rapidocr": RapidOcrEngine,
+    "openvino": RapidOcrOpenvinoEngine,
     "paddle": PaddleOcrEngine,
     "easyocr": EasyOcrEngine,
     "doctr": DocTrEngine,

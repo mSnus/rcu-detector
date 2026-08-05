@@ -14,6 +14,16 @@ Pillow==10.4.0
 # headless build pinned above. Its real runtime deps are listed out here.
 rapidocr-onnxruntime==1.3.24
 onnxruntime==1.23.2
+
+# The same PP-OCR models under OpenVINO. Installed alongside rather than
+# instead: it is roughly twice as fast on identical models (see
+# RapidOcrOpenvinoEngine for the figures) but it reads *more* text, so it
+# changes fingerprints and cannot be adopted on one path only. Having both in
+# the image is what allows the two to be A/B'd on the box that matters, which
+# is the only place the choice can honestly be made. Selected with
+# RCU_OCR_ENGINE=openvino; the default is unchanged.
+# Same --no-deps treatment as above, for the same opencv-python clash.
+openvino==2024.0.0
 pyclipper==1.3.0.post6
 Shapely==2.0.5
 PyYAML==6.0.2
