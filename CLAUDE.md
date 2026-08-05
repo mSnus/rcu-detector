@@ -6,8 +6,9 @@ Photograph a TV remote control, identify its model from a catalog of
 Read `docs/rcu-identifier-implementation-plan.md` for the full design, and
 `rcu-session-01/SESSION-01.md`, `service-python/SESSION-02.md`,
 `service-python/SESSION-03.md`, `service-python/SESSION-04.md`,
-`service-python/SESSION-05.md` and `service-python/SESSION-06.md` for status
-and known-bad behaviour. Session 06 is the current one. Session 04 corrects two
+`service-python/SESSION-05.md`, `service-python/SESSION-06.md` and
+`service-python/SESSION-07.md` for status and known-bad behaviour. Session 07
+is the current one. Session 04 corrects two
 claims session 03 made; session 05 retires the memory constraint that shaped
 sessions 03 and 04, so treat any `--ocr-width 800` advice in those two as
 historical.
@@ -383,25 +384,26 @@ These caused real bugs. Do not reintroduce them.
   pre-fix nid keying still baked into an image built before the fix landed.
   `docker compose build laravel` before believing any number from `exec`.
 
-## Next up (session 7)
+## Next up (session 7, in progress)
 
-Session 6 took session 5's item 3 (re-validate the bands) and found the corpus
-it would have been validated on was three quarters imagecache thumbnails. See
-`service-python/SESSION-06.md`. The bands are still uncalibrated — deliberately,
-because 19 records with zero wrong answers cannot calibrate a precision.
+Session 7 went after the corpus session 6 could not find: the whole live
+catalogue, extracting on `rcud` since 2026-08-05 01:54 and due around 07:00 on
+08-06. See `service-python/SESSION-07.md` for the build's measured position and
+health, and for how to read its progress (match the newest `fp/*.json` stem
+back to `primary.txt`, never count fingerprints).
 
-1. **Low-contrast keycap detection (plan 9.1)** — unchanged, still the only
-   substantial CV item.
-2. **Calibrate the bands on `rcud`**, where a catalog with confusable
-   neighbours exists. `scripts/calibrate_bands.py` is written and measured;
-   only the corpus is missing. Watch the new `too small` exclusion count: it
-   is the thing that reports whether the manifest resolved to usable
-   derivatives or to small ones.
-3. **The query path has no size floor.** The build refuses a thumbnail now; the
-   service still accepts one and answers it confidently. Left alone on purpose
-   (it changes an API verdict, and a phone photograph is never that small), but
-   it is a real asymmetry between the two paths — the family of bug this
-   project keeps finding.
+Closed this session: the query-path size floor, bounded-batch extraction (44 h
+-> 15 h), plan 9.1 step 1, and the missing login route that had been returning
+500 from `/admin/rcu` in production since session 5.
+
+1. **Low-contrast keycap detection (plan 9.1)** — step 1 (pseudo-label export)
+   is done; step 2 is hand-correction and is *not* skippable, for reasons
+   measured in SESSION-07.md. Still the only substantial CV item.
+2. **Calibrate the bands** once the build lands. Resync both consumers first —
+   `build_index.py`, then `rcu:import-catalog --legacy --prune --reindex` — or
+   retrieval returns `record_id`s that resolve to no row.
+3. Button drift between query and catalog: unchanged, measured as not costing
+   recall.
 
 ## Previously (session 6's list, from session 5)
 
