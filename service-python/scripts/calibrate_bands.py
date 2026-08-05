@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import random
 import re
 import sys
 from pathlib import Path
@@ -85,6 +86,12 @@ def main() -> None:
     ap.add_argument("--timeout", type=float, default=180.0)
     ap.add_argument("--top-k", type=int, default=10)
     ap.add_argument("--csv", type=Path, default=None)
+    ap.add_argument("--sample", type=int, default=0,
+                    help="query a random N of the photographs, 0 for all. "
+                         "A full catalogue is hours of uploads; a sample of a "
+                         "few hundred prices a band well enough to pick one.")
+    ap.add_argument("--seed", type=int, default=0,
+                    help="sampling seed, so a rerun queries the same photos")
     args = ap.parse_args()
 
     fps = {p.stem: json.loads(p.read_text()) for p in sorted(args.fp.glob("*.json"))}
@@ -92,6 +99,17 @@ def main() -> None:
         sys.exit(f"no fingerprints in {args.fp}")
 
     photos = photo_paths(args.photos, args.manifest)
+
+    # Sampled uniformly over the manifest, never truncated to the first N. The
+    # manifest is alphabetical, so a prefix is a sample of one corner of the
+    # brand distribution -- and a build that stopped early would be measured as
+    # if it had finished.
+    sampled_from = 0
+    if args.sample and args.sample < len(photos):
+        sampled_from = len(photos)
+        photos = random.Random(args.seed).sample(photos, args.sample)
+        photos.sort()
+
     url = f"{args.url.rstrip('/')}/identify?top_k={args.top_k}"
 
     rows: list[dict] = []
@@ -142,7 +160,20 @@ def main() -> None:
               flush=True)
 
     if not rows:
-        sys.exit("no queries succeeded; is the service running and pointed at --fp?")
+        # Say which of the two it was. A run where every query was refused with
+        # a 4xx looks identical to a dead service from here, and the advice for
+        # the two is opposite: one is a verdict on the images, the other is the
+        # service. This cost a debugging round the first time -- three sampled
+        # photographs were all imagecache thumbnails, every one refused on its
+        # size, and the message asked whether the service was running.
+        if errors:
+            print(f"{len(errors)} query error(s):", file=sys.stderr)
+            for e in errors[:10]:
+                print(f"  {e}", file=sys.stderr)
+        sys.exit(f"no queries succeeded ({skipped} skipped, {len(errors)} "
+                 f"errored). If the errors above are 4xx, the service is fine "
+                 f"and the images were refused; if there are none, check the "
+                 f"service is running and pointed at --fp.")
 
     if args.csv:
         args.csv.parent.mkdir(parents=True, exist_ok=True)
@@ -156,6 +187,12 @@ def main() -> None:
     print("\n" + "=" * 78)
     print(f"{n} queries, {skipped} skipped (no photo or no catalog record), "
           f"{len(errors)} error(s)")
+    if sampled_from:
+        # Stated on the result, not only in the invocation: every number below
+        # is an estimate with a sampling error, and the next reader of this
+        # output will not have the command line.
+        print(f"SAMPLE: {len(photos)} of {sampled_from} photographs "
+              f"(seed {args.seed}) -- the precisions below are estimates")
     print(f"self-retrieval recall@1 {n_correct}/{n} ({100*n_correct/n:.0f}%)")
 
     true_scores = [r["self_score"] for r in rows if r["self_score"] is not None]
