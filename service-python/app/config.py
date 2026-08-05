@@ -79,6 +79,20 @@ class NormalizeConfig:
     # side rejects all 75 thumbnails and none of them.
     min_source_long_side: int = 600
 
+    # And a ceiling, in pixels rather than bytes. A 12924x3144 upload -- 41 MP,
+    # 9 MB, well inside max_upload_bytes -- OOM-killed the service on rcud
+    # inside its 1 GB limit and returned a 503 to the caller. Bytes are not the
+    # constraint: JPEG of a flat product shot compresses hard, so the file size
+    # says almost nothing about the decoded array, and every stage after decode
+    # holds a multiple of it.
+    #
+    # Downscaled, not refused. A 48 MP phone photograph is legitimate input and
+    # nothing is lost by shrinking it: rectification takes the body to
+    # out_width (400) regardless, and OCR runs on the crop at its own upscale.
+    # 12 MP is above any catalogue image and above what a phone camera produces
+    # at default settings.
+    max_source_pixels: int = 12_000_000
+
 
 @dataclass
 class ButtonConfig:

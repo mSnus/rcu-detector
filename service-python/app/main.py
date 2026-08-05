@@ -141,6 +141,22 @@ async def _read_image(file: UploadFile) -> np.ndarray:
                    f"{CFG.normalize.min_source_long_side}px",
         )
 
+    # A ceiling as well as a floor, and in pixels rather than bytes: a 41 MP
+    # upload at 9 MB sat well inside max_upload_bytes and OOM-killed the service
+    # inside its 1 GB container, which the caller saw as a 503. JPEG of a flat
+    # product shot compresses hard, so the file size says very little about the
+    # decoded array, and every stage after decode holds a multiple of it.
+    #
+    # Downscaled rather than refused, because a 48 MP phone photograph is
+    # legitimate input and shrinking it costs nothing: the body is rectified to
+    # CFG.normalize.out_width whatever it arrived as.
+    px = img.shape[0] * img.shape[1]
+    if px > CFG.normalize.max_source_pixels:
+        scale = (CFG.normalize.max_source_pixels / px) ** 0.5
+        img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        print(f"downscaled {px / 1e6:.0f} MP upload to "
+              f"{img.shape[1]}x{img.shape[0]}", flush=True)
+
     return img
 
 
