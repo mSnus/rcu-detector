@@ -62,6 +62,18 @@ python scripts/calibrate_bands.py --photos ../files --manifest ../work/primary.t
 # Run over any new catalog drop; exits non-zero on violation.
 python scripts/check_decode.py --dir ../photos
 
+# plan 9.1 step 2: the labelling queue, out to Label Studio and back.
+# Read scripts/label_studio.md; the hand-correction is not optional and the
+# reasons are measured in export_button_dataset.py.
+python scripts/export_button_dataset.py --fp ../work/fp --norm ../work/norm \
+    --out ../work/dataset --split hard --queue-size 400
+python scripts/label_queue.py export --fp ../work/fp --dataset ../work/dataset
+python scripts/label_queue.py import --export ../work/dataset/ls_export.json \
+    --dataset ../work/dataset
+
+# assert a box survives that round trip before spending an afternoon on it
+python scripts/check_label_roundtrip.py --fp ../work/fp --norm ../work/norm
+
 # the service (loopback only; Laravel calls it)
 RCU_INTERNAL_TOKEN=... RCU_INDEX_PATH=../work/index/tokens.npz \
     RCU_FP_DIR=../work/fp python -m app.main
@@ -72,7 +84,11 @@ RCU_INTERNAL_TOKEN=... RCU_INDEX_PATH=../work/index/tokens.npz \
 # tell the running service to reload its index
 cd backend-laravel
 php artisan rcu:import-catalog --prune --reindex
-php artisan test                        # 71; 5 need the service running
+php artisan test                        # 87; 5 need the service running
+
+# after any extraction: resync both consumers and check they agree (host, not
+# a container). --calibrate then sweeps the bands over a sample of real uploads.
+cd .. && ./docker/resync-catalog.sh --calibrate --sample 500
 
 # the phone test page. No auth -- dev boxes only, never anywhere public.
 # Set RCU_TRY_PAGE=true in .env (host) and docker-compose reads it too, then
@@ -465,3 +481,12 @@ above.
   that misidentified a catalog remote.
 - Do not tune fusion weights to fix a match failure. The cause is nearly
   always upstream in extraction — check the overlay first.
+- Do not train on the uncorrected pseudo-labels, however good the quality
+  scores look. An unlabelled keycap is a *negative* to YOLO, high-quality
+  extractions are still systematically incomplete (`CAS-400_0` loses a whole
+  keypad at 0.91), and no automatic completeness test found works — both
+  candidates fail on that same record. See `export_button_dataset.py`.
+- Do not write an empty YOLO label file for a crop nobody labelled. Empty does
+  not mean "unknown", it means "entirely background", which is the most
+  damaging sentence the dataset can contain. `label_queue.py import` skips and
+  counts those; an annotated-with-no-boxes task is different and is kept.
