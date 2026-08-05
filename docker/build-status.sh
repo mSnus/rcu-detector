@@ -46,7 +46,14 @@ fi
 
 echo
 echo "== what the log last said"
-if [ -f "$WORK/build.log" ]; then
+# A detached `compose run -d` writes its per-image output to the container's
+# log, not to build.log -- build.log then holds only the container id. Ask the
+# container while it exists, and fall back to the file once it is gone.
+if [ -n "$running" ]; then
+    cid=$($DOCKER ps -q --filter "name=extract-run" | head -1)
+    $DOCKER logs --tail 3 "$cid" 2>&1 | sed 's/^/  /'
+    echo "  (follow it with: $DOCKER logs -f $cid)"
+elif [ -f "$WORK/build.log" ]; then
     if grep -q "^ABORTED" "$WORK/build.log"; then
         echo "!! ABORTED -- a worker was killed; everything after it was skipped"
     fi
