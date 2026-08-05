@@ -620,6 +620,27 @@ class ServiceConfig:
     # query path budget; exceeding it is logged, not enforced
     target_latency_ms: int = 1000
 
+    # --- load shedding ----------------------------------------------------
+    # Identification is CPU-bound and holds ~350 MB of intermediate arrays
+    # while it segments, on a box with two cores. Running two at once is
+    # therefore slower than running them one after another AND doubles peak
+    # memory, which is what killed the process the day the catalogue passed
+    # 8000 records. So the heavy section is serialised.
+    #
+    # The point of the limit is not the serialising -- the GIL and the core
+    # count would do that anyway -- it is what happens to request 30. Without
+    # a bound a burst just queues, every client waits longer and longer, and
+    # nothing ever fails; with one, the queue is short and the rest are told
+    # to come back. `/try` is reachable by anyone, so this is not hypothetical.
+    max_concurrent_queries: int = 1
+    # How long a request waits for a slot before it is shed. Roughly one
+    # query's work: long enough to absorb an overlap, short enough that the
+    # caller is not left holding a connection through a queue.
+    queue_wait_s: float = 4.0
+    # Backstop at the socket. uvicorn answers 503 above this many concurrent
+    # connections, before any of this code runs.
+    limit_concurrency: int = 32
+
 
 @dataclass
 class Config:

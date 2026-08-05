@@ -13,6 +13,7 @@ The index is loaded once into module state at startup, never per request.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 import uuid
@@ -80,8 +81,41 @@ def load_index() -> None:
         STATE.error = f"{type(exc).__name__}: {exc}"
 
 
+# Created in the lifespan, not at import: a Semaphore binds to the running
+# loop, and one built at import time belongs to whichever loop happened to
+# exist then -- which under uvicorn is not the one serving requests.
+_SLOTS: asyncio.Semaphore | None = None
+
+
+@asynccontextmanager
+async def busy_slot(what: str):
+    """Hold one of the heavy-work slots, or shed the request.
+
+    The work inside is CPU-bound and memory-hungry, so this serialises it. The
+    reason to bound it explicitly rather than let the GIL do it is the queue:
+    unbounded, a burst makes every client wait longer and nothing ever fails,
+    which is indistinguishable from the service being broken. Bounded, the
+    excess is told to retry -- and 503 is the honest code, because it is about
+    the service and not about the image.
+    """
+    assert _SLOTS is not None
+    try:
+        await asyncio.wait_for(_SLOTS.acquire(), timeout=CFG.service.queue_wait_s)
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=503,
+            detail=f"busy: {what} is already running and the queue is full",
+        )
+    try:
+        yield
+    finally:
+        _SLOTS.release()
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    global _SLOTS
+    _SLOTS = asyncio.Semaphore(CFG.service.max_concurrent_queries)
     load_index()
     STATE.ocr_engines = available_engines()
     if not os.environ.get(CFG.service.auth_env):
@@ -215,7 +249,27 @@ async def identify(image: UploadFile = File(...), top_k: int = 5,
     # enough that RM-PJ20_big_light was never retrieved at all and
     # Huayu_Motorola_Cisco_15 scored 0.488 instead of 0.901. The economy and
     # the both-ways retrieval are a pair; do not keep one without the other.
-    remotes = extract_remotes(img, ensemble=True, fast_ocr=True)
+
+    # to_thread, not a direct call: everything below is seconds of blocking
+    # CPU, and on the event loop it blocks *every* other request including
+    # /health -- so a container healthcheck can fail because the service is
+    # working, which is the opposite of what it is there to detect. The slot
+    # guard is what keeps the freed-up concurrency from turning into two
+    # extractions at once.
+    async with busy_slot("an identification"):
+        remotes = await asyncio.to_thread(
+            extract_remotes, img, ensemble=True, fast_ocr=True)
+        if remotes:
+            remote = max(remotes,
+                         key=lambda r: r.fingerprint["stats"]["n_buttons"])
+            result = await asyncio.to_thread(
+                STATE.matcher.match, remote.fingerprint, top_k)
+            if debug:
+                ok, buf = cv2.imencode(".jpg", debug_panel(img, remote),
+                                       [cv2.IMWRITE_JPEG_QUALITY, 85])
+                if ok:
+                    STATE.remember_debug(request_id, buf.tobytes())
+
     if not remotes:
         return JSONResponse({
             "request_id": request_id, "confidence": "none",
@@ -225,17 +279,8 @@ async def identify(image: UploadFile = File(...), top_k: int = 5,
             "message": "no remote found in the image",
         })
 
-    # Largest body first; a query photo should hold one remote, and if it
-    # holds more the biggest is the one being photographed.
-    remote = max(remotes, key=lambda r: r.fingerprint["stats"]["n_buttons"])
-    result = STATE.matcher.match(remote.fingerprint, top_k=top_k)
-
-    if debug:
-        ok, buf = cv2.imencode(".jpg", debug_panel(img, remote),
-                               [cv2.IMWRITE_JPEG_QUALITY, 85])
-        if ok:
-            STATE.remember_debug(request_id, buf.tobytes())
-
+    # `remote` is the largest body: a query photo should hold one remote, and
+    # if it holds more the biggest is the one being photographed.
     latency = int((time.time() - t0) * 1000)
     if latency > CFG.service.target_latency_ms:
         # Logged, not enforced. The query path has a ~1s budget; exceeding it
@@ -265,7 +310,9 @@ async def fingerprint(image: UploadFile = File(...),
     what comes back is what the catalog would have stored for this image.
     """
     img = await _read_image(image)
-    remotes = extract_remotes(img, ensemble=ensemble, use_ocr=ocr)
+    async with busy_slot("a fingerprint"):
+        remotes = await asyncio.to_thread(
+            extract_remotes, img, ensemble=ensemble, use_ocr=ocr)
     return JSONResponse({
         "bodies_found": len(remotes),
         "fingerprints": [r.fingerprint for r in remotes],
@@ -295,7 +342,10 @@ def debug_image(request_id: str) -> Response:
 
 def main() -> None:
     import uvicorn
+    # limit_concurrency sheds at the socket, before any of this code runs, so
+    # a flood cannot fill memory with half-read uploads waiting for a slot.
     uvicorn.run(app, host=CFG.service.host, port=CFG.service.port,
+                limit_concurrency=CFG.service.limit_concurrency,
                 log_level="info")
 
 
