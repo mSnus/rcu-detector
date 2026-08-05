@@ -44,6 +44,18 @@ class TryPageTest extends TestCase
             ->assertSee('/api/identify', false);
     }
 
+    public function test_it_offers_an_upload_as_well_as_the_camera(): void
+    {
+        // Two controls, and the second must NOT carry `capture`: that attribute
+        // is the only difference between them, and a copy-paste that keeps it
+        // gives a phone two camera buttons and no way to pick an existing file.
+        $html = $this->get('/try')->assertOk()->getContent();
+
+        $this->assertSame(2, substr_count($html, 'type="file"'));
+        $this->assertSame(1, substr_count($html, 'capture='));
+        $this->assertStringContainsString('id="upload"', $html);
+    }
+
     public function test_candidate_images_use_a_path_not_an_absolute_url(): void
     {
         // Behind a TLS-terminating proxy an absolute URL comes out as http://

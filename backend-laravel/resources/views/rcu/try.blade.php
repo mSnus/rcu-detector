@@ -34,6 +34,12 @@
             padding: 16px; font-weight: 600;
         }
         label.shoot input { display: none; }
+        /* Second control, for a photo already on the device. Deliberately
+           quieter than the camera: on a phone that is still the main path. */
+        label.shoot.alt {
+            background: #30363d; color: var(--ink);
+            border: 1px solid var(--line); margin-top: 8px; font-weight: 500;
+        }
         button {
             font: inherit; background: #30363d; color: var(--ink);
             border: 1px solid var(--line); border-radius: 6px;
@@ -87,6 +93,13 @@
         Take a photo
         <input type="file" id="photo" accept="image/*" capture="environment">
     </label>
+    {{-- Same accept, no `capture`: that attribute is what makes a phone open
+         the camera instead of the picker, so dropping it is the whole
+         difference between the two controls. --}}
+    <label class="shoot alt">
+        Upload a photo
+        <input type="file" id="upload" accept="image/*">
+    </label>
     <div id="preview" hidden style="margin-top: 12px">
         <img class="shot" id="previewImg" alt="">
         <div style="margin-top: 10px; display: flex; gap: 8px">
@@ -112,18 +125,28 @@ const PHOTO_URL = @json(route('rcu.try.photo', ['recordId' => '__ID__'], absolut
 let file = null;
 let requestId = null;
 
-$('photo').addEventListener('change', e => {
+// Both controls feed the same variable, and picking from one clears the other:
+// two file inputs each hold their own selection, so without this the stale one
+// is what a later `.value` read sees.
+function picked(e) {
     file = e.target.files[0] || null;
     if (!file) return;
+    for (const id of ['photo', 'upload']) {
+        if (id !== e.target.id) $(id).value = '';
+    }
     $('previewImg').src = URL.createObjectURL(file);
     $('preview').hidden = false;
     $('results').hidden = true;
     say('');
-});
+}
+
+$('photo').addEventListener('change', picked);
+$('upload').addEventListener('change', picked);
 
 $('clear').addEventListener('click', () => {
     file = null; requestId = null;
     $('photo').value = '';
+    $('upload').value = '';
     $('preview').hidden = true;
     $('results').hidden = true;
     say('');
