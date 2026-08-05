@@ -92,19 +92,28 @@ if [ "$SNAPSHOT" -eq 1 ]; then
     rm -rf "${WORK:?}/$FP_NAME"
     mkdir -p "$WORK/$FP_NAME"
 
-    partial=0
-    copied=0
-    for f in "$WORK/fp"/*.json; do
-        [ -e "$f" ] || continue
-        if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$f" 2>/dev/null; then
-            cp -p "$f" "$WORK/$FP_NAME/"
-            copied=$((copied + 1))
-        else
-            partial=$((partial + 1))
-        fi
-    done
-    echo "$copied fingerprint(s) copied"
-    [ "$partial" -gt 0 ] && echo "$partial still being written, left for the next snapshot"
+    # One interpreter for the whole directory, not one per file: at 13k
+    # fingerprints a per-file `python3 -c` is minutes of process startup on a
+    # two-core box that is already extracting.
+    python3 - "$WORK/fp" "$WORK/$FP_NAME" <<'PY'
+import json, shutil, sys
+from pathlib import Path
+
+src, dst = Path(sys.argv[1]), Path(sys.argv[2])
+copied = partial = 0
+for f in sorted(src.glob("*.json")):
+    try:
+        json.loads(f.read_text())
+    except Exception:
+        partial += 1
+        continue
+    shutil.copy2(f, dst / f.name)
+    copied += 1
+
+print(f"{copied} fingerprint(s) copied")
+if partial:
+    print(f"{partial} still being written, left for the next snapshot")
+PY
 fi
 
 # ------------------------------------------------------- 1. what the build did
