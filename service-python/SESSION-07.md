@@ -283,6 +283,50 @@ product** and cannot be keyed, and 20 fingerprints have no product row. Both
 are counted at the point of exclusion, which is the rule session 6 established;
 neither has been looked into.
 
+## Where a query's time goes
+
+Profiled one 12.6 MP phone photograph, warm, against the 8262-record catalogue.
+Two of the costs bought nothing and are gone; the rest is now honest work.
+
+| | before | after |
+|---|---|---|
+| decode | 115 ms | 115 ms |
+| body detection (Lab 913 + Otsu 101) | 935 ms | 935 ms |
+| **the same Lab mask, computed a second time** | **913 ms** | **0** |
+| button detection, ensemble | 106 ms | 106 ms |
+| OCR (detect 1303 + recognise 763) | 2134 ms | 2134 ms |
+| extraction total | 4300 ms | **2915 ms** |
+| debug overlay, when asked for | — | 41 ms (was 996) |
+| matching, 8262 records | 1324 ms | **456 ms** |
+
+The duplicate mask was read by one thing, the `fg mask` debug panel, and
+`detect_bodies` had already built it. Making it *lazy* was the first attempt and
+was wrong: this deployment asks for `debug=true` on every query, so laziness
+moved the cost instead of removing it and an overlay went from free to 996 ms.
+Returning the mask body detection already holds costs nothing either way.
+
+Matching was 320,058 calls to `_pair_cost` — 156 candidates, each verified both
+ways up, each a few thousand button pairs, each pair a Python call. The cost
+matrix is numpy now, with `np.lexsort` reproducing `sort()`'s tie-breaking
+exactly, because the greedy assignment underneath takes the first free pair in
+cost order and a different tie order silently changes inlier counts.
+`check_correspondences.py` keeps the double loop as the reference: 300 pairs
+from the live catalogue, identical assignments, 6x faster.
+
+All 21 dev fingerprints re-extract byte-identical.
+
+**What is left, in order.** OCR is now 73% of extraction and is the floor unless
+label recall is traded — `fast_ocr` already halves it. Body detection at 935 ms
+would be ~80 ms on a 1200px copy, but it is *not* free: the body box moves
+enough to change the output (buttons 40 -> 38, aspect 2.933 -> 3.00), so it
+would have to be applied to both paths and the catalogue rebuilt behind it.
+Matching scales with the catalogue and will roughly double at 13763 records.
+The first query after a restart pays 2.1 s to load the fingerprint store.
+
+Live latency on `rcud` is 8-9 s against 11.9 s before, but the box is giving
+186% of its two cores to the extraction; the dev-box figure with everything
+warm is 3.4 s. Re-measure when the build lands.
+
 ## Carried forward
 
 1. **Low-contrast keycap detection (plan 9.1)** — steps 1 and 2's *tooling* are
