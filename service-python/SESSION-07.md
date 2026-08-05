@@ -246,6 +246,43 @@ project looks healthy; and that storage may not be the document root, so it has
 to point at `images/hard`, which is not a path anyone would guess. A hand-drawn
 box at 10%/70% came back as `0.140000 0.715000`.
 
+## Serving the build before it finishes
+
+`resync-catalog.sh --snapshot` copies `fp/` and points everything downstream at
+the copy, including `rcu:import-catalog --fp`, which otherwise reads
+`RCU_FP_DIR` and would import records the index does not contain. Without the
+copy the index is built at one moment and the table imported at another, and
+the two disagree by whatever landed in between — the same drift the count check
+exists to catch, arriving by the one route it cannot see, because both counts
+move. The copy is also where a half-written fingerprint is caught: parsed, and
+the unparseable left for the next snapshot.
+
+Run on `rcud` at 14:35, mid-build: **7451 records live**, index 8095 docs, both
+consumers in step. `/try` is enabled there and has no authentication — the
+trade-off was put explicitly and that was the choice.
+
+A catalogue photograph posted to the public `/api/identify` self-retrieved at
+0.9118, `high`, with catalogue metadata resolved. Two things that measurement
+turned up:
+
+* **Latency is 8.2 s against a ~1 s budget.** The extraction is holding 196% of
+  the box's two cores, so this is contention and not a query-path regression.
+  It is also the first evidence about how the service behaves on a real index,
+  and it must be re-measured once the build is done rather than filed as known.
+* The field is `photo`, not `image`; the API says so plainly, which is the
+  behaviour session 5 asked for.
+
+The import's index-skew warning fired on a run that had done nothing wrong: it
+asked the service for a record count it was about to replace, so it printed
+`index holds 61 record(s), catalog now holds 7451. Rebuild the index` directly
+above `service reindexed: 8095 docs`. Reordered. Harmless at 21 records, an
+invitation to redo a 30-hour build at 7451.
+
+Also visible for the first time at scale: **55 filenames name more than one
+product** and cannot be keyed, and 20 fingerprints have no product row. Both
+are counted at the point of exclusion, which is the rule session 6 established;
+neither has been looked into.
+
 ## Carried forward
 
 1. **Low-contrast keycap detection (plan 9.1)** — steps 1 and 2's *tooling* are
