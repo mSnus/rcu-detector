@@ -194,14 +194,69 @@ ETA is around 07:00 on 2026-08-06.
 --reindex`. A token index and an `rcu_fingerprints` table from different
 extraction runs still "work" and return `record_id`s that resolve to no row.
 
+## Two things built while it runs
+
+**`docker/resync-catalog.sh`.** The index and the `rcu_fingerprints` table have
+to come from the same extraction, and doing that by hand in the right order at
+07:00 after a 30-hour build is how the order gets got wrong. The script ends by
+asserting the two counts agree and exits non-zero when they do not. It refuses
+to start while an extraction is still writing, found by container name because
+`compose --profile build run` does not appear as a service in `compose ps`.
+
+`calibrate_bands.py` gained `--sample`, since 13763 uploads is hours. Sampled
+uniformly over the manifest and never truncated to the first N — the manifest
+is alphabetical, so a prefix is one corner of the brand distribution — and the
+sample is stated in the output, because every precision under it is then an
+estimate and the next reader will not have the command line.
+
+Three fixes fell out of verifying it on the dev stack, which is the argument
+for verifying it on the dev stack: `tinker` exits 1 on an unwritable home so
+the row count came back empty and read as a database failure; the extract image
+predated `calibrate_bands.py` and `run` reported a missing file with no hint
+why; and "no queries succeeded; is the service running?" was wrong — all three
+sampled photographs were imagecache thumbnails and the service had refused
+every one on its size. A 4xx verdict and a dead service now read differently.
+
+That last run is the first live confirmation of the query-path size floor: 15
+of 20 legacy dev images came back `400 image too small`, at 11–44 px wide.
+
+**The labelling loop.** `label_queue.py` ships the hard queue out to Label
+Studio with the classical boxes attached as *predictions* and brings the
+corrections back as YOLO labels; `label_studio.md` is the operator's page;
+`check_label_roundtrip.py` asserts a box survives the trip.
+
+The conversion is where this fails silently. A fingerprint stores a button as
+centre x/y in fractions of the crop, Label Studio as top-left x/y in
+percentages, and confusing them offsets every box by half its own size — which
+on a dense keypad still looks like a plausible set of buttons, and would
+surface after an afternoon of labelling as a detector that finds keys half a
+key up and to the left. 256 boxes round-trip exactly, bar four clamped at the
+crop edge; breaking the conversion on purpose moves interior boxes by up to
+1.4e-1 and the check fails, so the check tests something.
+
+The importer will not write an empty label file for a task nobody opened. Empty
+is not "unknown" to YOLO, it is "this crop is entirely background". A task
+submitted with no boxes is a different thing — someone asserted it — and is
+kept as a background sample.
+
+Run against a real Label Studio 1.23.0 rather than against a model of one,
+which is how both of its traps were found: local file serving 404s every image
+until a Local Storage is registered, while the tasks import perfectly and the
+project looks healthy; and that storage may not be the document root, so it has
+to point at `images/hard`, which is not a path anyone would guess. A hand-drawn
+box at 10%/70% came back as `0.140000 0.715000`.
+
 ## Carried forward
 
-1. **Low-contrast keycap detection (plan 9.1)** — step 1 done, step 2 is the
-   gate. Still the only substantial CV item, and still the only thing that
-   moves `MR-18B_0_1` off 4 buttons and separation off +0.077.
+1. **Low-contrast keycap detection (plan 9.1)** — steps 1 and 2's *tooling* are
+   done and verified end to end. What is left is an afternoon of a person
+   correcting boxes, then training. Still the only substantial CV item, and
+   still the only thing that moves `MR-18B_0_1` off 4 buttons and separation
+   off +0.077. Draw the queue from the `rcud` catalogue, not from the 21-record
+   dev sample.
 2. **Calibrate the bands**, now that a catalogue with confusable neighbours is
-   nearly extracted. `scripts/calibrate_bands.py` is written and measured; the
-   corpus arrives tomorrow morning.
+   nearly extracted. `./docker/resync-catalog.sh --calibrate` is the whole of
+   it; the corpus arrives tomorrow morning.
 3. Button drift between query and catalog: unchanged since session 5, measured
    as not costing recall.
 4. `work/fp.bak-preflip` is kept deliberately (it documents the CLAHE rotation
