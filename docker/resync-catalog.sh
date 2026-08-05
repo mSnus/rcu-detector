@@ -5,6 +5,7 @@
 #
 #   ./docker/resync-catalog.sh                      # index, import, verify
 #   ./docker/resync-catalog.sh --calibrate          # ... and sweep the bands
+#   ./docker/resync-catalog.sh --snapshot           # serve a build in progress
 #   DOCKER='sudo -n docker' ./docker/resync-catalog.sh   # rcud: no docker group
 #
 # There are two consumers of an extraction and they must come from the same
@@ -29,12 +30,15 @@ CALIBRATE=0
 CHECK_DECODE=0
 SAMPLE=${SAMPLE:-500}
 FORCE=0
+SNAPSHOT=0
+FP_NAME=fp
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --calibrate) CALIBRATE=1; shift ;;
         --check-decode) CHECK_DECODE=1; shift ;;
         --sample) SAMPLE="$2"; shift 2 ;;
+        --snapshot) SNAPSHOT=1; shift ;;
         --force) FORCE=1; shift ;;
         -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -52,22 +56,61 @@ running=$($DOCKER ps --filter "name=extract-run" --format '{{.Names}}' | head -5
 if [ -n "$running" ]; then
     echo "an extraction is still running:" >&2
     echo "$running" | sed 's/^/  /' >&2
-    if [ "$FORCE" -eq 0 ]; then
+    if [ "$SNAPSHOT" -eq 1 ]; then
+        echo "--snapshot: pinning both consumers to what exists right now" >&2
+    elif [ "$FORCE" -eq 0 ]; then
         echo >&2
         echo "fp/ is written incrementally, so indexing now yields a valid index" >&2
-        echo "of a partial catalog and nothing downstream can tell. Wait, or" >&2
-        echo "--force if you know this build is not writing to $WORK." >&2
+        echo "of a partial catalog and nothing downstream can tell. Use" >&2
+        echo "--snapshot to serve what is extracted so far, wait for the build," >&2
+        echo "or --force if you know this build is not writing to $WORK." >&2
         exit 1
+    else
+        echo "--force given; continuing against a live build" >&2
     fi
-    echo "--force given; continuing against a live build" >&2
 fi
 
 [ -d "$WORK/fp" ] || { echo "no fingerprints at $WORK/fp" >&2; exit 1; }
 
+# ------------------------------------------------------------- 0b. the snapshot
+
+# Serving a half-built catalog is a reasonable thing to want, but not by
+# pointing the two consumers at a directory a build is still writing into: the
+# index would be built at one moment and the catalog table imported at another,
+# and the two would disagree by however many records landed in between. That is
+# the same drift the count check at the end exists to catch, arriving by a route
+# the check cannot see, because both counts move.
+#
+# So copy first and let everything downstream read the copy. The copy is also
+# where a half-written file is caught: a fingerprint being flushed as `cp` reads
+# it lands as truncated JSON, and the index build would die on it partway
+# through. Parse each one and drop what does not parse -- it is in the next
+# snapshot, complete.
+if [ "$SNAPSHOT" -eq 1 ]; then
+    FP_NAME=fp.snapshot
+    say "snapshotting $WORK/fp -> $WORK/$FP_NAME"
+    rm -rf "${WORK:?}/$FP_NAME"
+    mkdir -p "$WORK/$FP_NAME"
+
+    partial=0
+    copied=0
+    for f in "$WORK/fp"/*.json; do
+        [ -e "$f" ] || continue
+        if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$f" 2>/dev/null; then
+            cp -p "$f" "$WORK/$FP_NAME/"
+            copied=$((copied + 1))
+        else
+            partial=$((partial + 1))
+        fi
+    done
+    echo "$copied fingerprint(s) copied"
+    [ "$partial" -gt 0 ] && echo "$partial still being written, left for the next snapshot"
+fi
+
 # ------------------------------------------------------- 1. what the build did
 
 say "what the build produced"
-fp_count=$(find "$WORK/fp" -name '*.json' | wc -l)
+fp_count=$(find "$WORK/$FP_NAME" -name '*.json' | wc -l)
 echo "fingerprints: $fp_count"
 
 if [ -s "$WORK/skipped.txt" ]; then
@@ -82,7 +125,7 @@ fi
 # other trace: fp/ is as plausible at 40% as at 100%.
 if [ -f "$WORK/primary.txt" ]; then
     lines=$(grep -c . "$WORK/primary.txt" || true)
-    last=$(find "$WORK/fp" -name '*.json' -printf '%f\n' | sort | tail -1)
+    last=$(find "$WORK/$FP_NAME" -name '*.json' -printf '%f\n' | sort | tail -1)
     echo "manifest: $lines line(s); alphabetically last fingerprint: ${last:-none}"
     echo "  (the manifest is sorted, so a last stem well before its end means"
     echo "   the build did not finish -- check $WORK/build.log)"
@@ -112,12 +155,17 @@ say "building the token index"
 # read-only precisely so that the index cannot be rewritten under a running
 # service by anything but this step.
 $COMPOSE --profile build run --rm --entrypoint python extract \
-    scripts/build_index.py --fp /data/work/fp --out /data/work/index/tokens.npz
+    scripts/build_index.py --fp "/data/work/$FP_NAME" --out /data/work/index/tokens.npz
 
 # --------------------------------------------------------------- 4. the table
 
 say "importing the catalog table"
-$COMPOSE exec -T laravel php artisan rcu:import-catalog --legacy --prune --reindex
+# --fp so the table is loaded from the same set the index was built from.
+# Without it the import reads RCU_FP_DIR, the live directory, and a snapshot
+# run would import records the index does not contain -- the exact drift this
+# script ends by asserting against.
+$COMPOSE exec -T laravel php artisan rcu:import-catalog --legacy --prune --reindex \
+    --fp "/data/work/$FP_NAME"
 
 # ---------------------------------------------------------------- 5. do they agree
 
@@ -171,7 +219,7 @@ if [ "$CALIBRATE" -eq 1 ]; then
         --entrypoint python extract \
         scripts/calibrate_bands.py \
             --photos /data/files "${manifest[@]}" \
-            --fp /data/work/fp \
+            --fp "/data/work/$FP_NAME" \
             --url http://rcu-service:8600 \
             --token "$RCU_INTERNAL_TOKEN" \
             --sample "$SAMPLE" \
