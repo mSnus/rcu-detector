@@ -85,6 +85,29 @@ return [
 
     /*
     |---------------------------------------------------------------------------
+    | Try page: hide the diagnostics
+    |---------------------------------------------------------------------------
+    |
+    | The page was built to debug the matcher, so it shows what the matcher was
+    | thinking: scores, inlier counts, button counts, record ids, latency. To
+    | someone who just wants to know which remote they are holding, all of that
+    | is noise, and a score of 1.003 invites a question about a scale nobody
+    | explained.
+    |
+    | With this set, the page shows the photographs, the model and its link to
+    | the catalogue, and nothing else. The feedback buttons go too: "that's it"
+    | asks the user to confirm a specific catalogue record, and once the
+    | numbers distinguishing an original from a compatible copy are hidden,
+    | there is nothing left on the page to answer it with.
+    |
+    | It is presentation only. The API returns the same payload either way.
+    |
+    */
+
+    'try_simple' => (bool) env('RCU_TRY_SIMPLE', false),
+
+    /*
+    |---------------------------------------------------------------------------
     | Catalog build artefacts
     |---------------------------------------------------------------------------
     |

@@ -165,6 +165,9 @@
 <script>
 const $ = id => document.getElementById(id);
 const MAX_KB = @json($maxUploadKb);
+/* Presentation only -- the API returns the same payload either way. See
+   `try_simple` in config/rcu.php for what is hidden and why. */
+const SIMPLE = @json($simple);
 /* A path, not an absolute URL. Behind a TLS-terminating proxy Laravel builds
    absolute URLs with the scheme it thinks it is serving, which is http unless
    TrustProxies is configured for that proxy -- and every one of these images
@@ -348,13 +351,13 @@ function render(data) {
 
     say(`<span class="tag ${esc(band)}">${esc(band)}</span> `
         + (data.hint ? `<span class="dim">${esc(hintText(data.hint))}</span>` : '')
-        + `<div class="stats">`
+        + (SIMPLE ? '' : `<div class="stats">`
         + `${ex.button_count ?? '—'} buttons`
         + ` &middot; brand <code>${esc(ex.brand ?? '—')}</code>`
         + ` &middot; model <code>${esc(ex.model_code ?? '—')}</code>`
         + ` &middot; ${data.latency_ms ?? '—'} ms`
         + ` &middot; <span class="dim">${esc(data.request_id ?? '')}</span>`
-        + `</div>`);
+        + `</div>`));
 
     const cands = data.candidates || [];
     const box = $('results');
@@ -437,6 +440,9 @@ function renderGroup(g) {
         const u = mc.item_url
             ? `<a href="${esc(mc.item_url)}" target="_blank" rel="noopener">${esc(label)}</a>`
             : esc(label);
+        if (SIMPLE) {
+            return `<div class="variant"><div>${u}</div></div>`;
+        }
         return `<div class="variant">
             <div>${u}</div>
             <div class="nums">
@@ -495,7 +501,10 @@ function orientationNote(o) {
 function feedbackOnlyButton() {
     /* "None of these" is the most informative answer the page can collect: it
        says the catalog is missing this remote or the extraction was wrong,
-       which no positive pick ever does. */
+       which no positive pick ever does. Still dropped in simple mode: with the
+       scores hidden the page is no longer asking a question, and a lone
+       negative button next to no positive one reads as an error control. */
+    if (SIMPLE) return '';
     return `<div style="margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px">
         <button data-choose="">None of these</button>
     </div>`;

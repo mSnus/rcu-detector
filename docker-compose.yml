@@ -60,6 +60,10 @@ services:
       # gets it by asking. Do not set this on a publicly reachable deployment
       # without putting authentication in front of the route first.
       RCU_TRY_PAGE: ${RCU_TRY_PAGE:-false}
+      # Hide the matcher's diagnostics on /try: scores, inlier and button
+      # counts, record ids, and the feedback buttons that depend on them.
+      # Presentation only -- the API returns the same payload either way.
+      RCU_TRY_SIMPLE: ${RCU_TRY_SIMPLE:-false}
     volumes:
       - ./work:/data/work:ro
       - ${RCU_FILES_DIR:-./files}:/data/files:ro

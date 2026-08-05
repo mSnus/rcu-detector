@@ -34,6 +34,7 @@ class TryController extends Controller
         return view('rcu.try', [
             'maxUploadKb' => (int) config('rcu.max_upload_kb'),
             'catalogSize' => RcuFingerprint::count(),
+            'simple' => (bool) config('rcu.try_simple'),
         ]);
     }
 

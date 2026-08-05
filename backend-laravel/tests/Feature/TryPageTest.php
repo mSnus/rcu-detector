@@ -65,6 +65,25 @@ class TryPageTest extends TestCase
         $this->get('/try')->assertOk()->assertSee('up to 20 MB', false);
     }
 
+    public function test_simple_mode_hides_the_diagnostics(): void
+    {
+        // The flag reaches the page as a JS constant, and everything it hides
+        // is hidden client-side because the results are rendered there. What a
+        // test can hold is that the flag arrives with the right value, and
+        // that the branches keyed on it exist.
+        config(['rcu.try_simple' => true]);
+        $html = $this->get('/try')->assertOk()->getContent();
+
+        $this->assertStringContainsString('const SIMPLE = true;', $html);
+        $this->assertStringContainsString("if (SIMPLE) return '';", $html);
+
+        config(['rcu.try_simple' => false]);
+        $this->assertStringContainsString(
+            'const SIMPLE = false;',
+            $this->get('/try')->assertOk()->getContent()
+        );
+    }
+
     public function test_candidate_images_use_a_path_not_an_absolute_url(): void
     {
         // Behind a TLS-terminating proxy an absolute URL comes out as http://
