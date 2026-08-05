@@ -61,8 +61,12 @@ class ExportTitlesCommand extends Command
         $body = implode("\n", $lines) . (count($lines) ? "\n" : '');
 
         if ($out === '-') {
-            $this->output->write($body, false, OutputInterface::OUTPUT_RAW);
-            $this->getErrorStyle()->writeln(count($lines) . ' title(s)');
+            $this->getOutput()->write($body, false, OutputInterface::OUTPUT_RAW);
+            // getErrorStyle() lives on the OutputStyle, not on the Command --
+            // calling it on $this throws BadMethodCallException *after* the
+            // body has been written, so the exception text lands in the file
+            // being redirected. Which is exactly what happened the first time.
+            $this->getOutput()->getErrorStyle()->writeln(count($lines) . ' title(s)');
 
             return self::SUCCESS;
         }
