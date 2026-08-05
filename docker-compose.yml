@@ -19,7 +19,13 @@ services:
     # No ports: the service is reachable only on the internal network. It has
     # no TLS and its shared-secret header is not a substitute for that.
     networks: [internal]
-    mem_limit: 1g
+    # The fingerprint store loads the whole catalogue eagerly -- ~640 MB at
+    # 9668 records -- and a 12 MP query allocates a further ~350 MB of Lab and
+    # distance arrays while segmenting. At 1g the first query after the
+    # catalogue passed 8000 records killed the process mid-request, with no
+    # traceback and OOMKilled=false, which reads as a crash rather than a
+    # limit. Raise this with the catalogue, or make JsonDirStore lazy.
+    mem_limit: ${RCU_SERVICE_MEM:-1500m}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8600/health"]
       interval: 30s
