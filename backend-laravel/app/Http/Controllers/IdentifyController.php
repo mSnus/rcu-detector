@@ -194,9 +194,16 @@ class IdentifyController extends Controller
 
         return RcuFingerprint::whereIn('record_id', $ids)
             ->get(['record_id', 'model_id', 'source_image', 'button_count',
-                   'quality_score', 'reviewed', 'brand_text', 'model_text'])
+                   'quality_score', 'reviewed', 'brand_text', 'model_text',
+                   'title'])
             ->keyBy('record_id')
             ->map(fn (RcuFingerprint $f) => [
+                // The catalogue's own name for the product. Without it a
+                // caller has only the record_id, which is a filename stem and
+                // names nothing a person recognises -- `brand`/`model_code`
+                // are what the *extractor* read off the photograph and are
+                // null far more often than the catalogue is silent.
+                'title' => $f->title,
                 'model_id' => $f->model_id,
                 'source_image' => $f->source_image,
                 'button_count' => $f->button_count,

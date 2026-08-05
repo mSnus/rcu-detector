@@ -71,6 +71,28 @@
         .cand .name { font-weight: 600; word-break: break-all; }
         .cand .nums { color: var(--dim); font-size: 12px; }
         .cand button { margin-top: 6px; }
+        /* Tapping a candidate opens it beside the photograph that was sent.
+           A bigger crop on its own does not answer the question the user is
+           actually asking, which is "is this the same remote as mine". */
+        .cand img { cursor: zoom-in; }
+        #lightbox {
+            position: fixed; inset: 0; z-index: 10; background: rgba(0,0,0,.92);
+            display: flex; flex-direction: column; padding: 12px; gap: 8px;
+        }
+        #lightbox[hidden] { display: none; }
+        #lightbox .pair {
+            flex: 1; min-height: 0; display: flex; gap: 12px; justify-content: center;
+        }
+        #lightbox figure {
+            margin: 0; flex: 1; min-width: 0; display: flex;
+            flex-direction: column; align-items: center; gap: 6px;
+        }
+        #lightbox img {
+            min-height: 0; max-height: 100%; max-width: 100%;
+            object-fit: contain; border-radius: 6px;
+        }
+        #lightbox figcaption { font-size: 12px; color: var(--dim); }
+        #lightbox .close { align-self: center; }
         .err { color: var(--none); }
         .ok { color: var(--high); }
         .stats { font-size: 12px; color: var(--dim); margin-top: 8px; }
@@ -117,6 +139,20 @@
 <div id="status" class="panel" hidden></div>
 <div id="results" class="panel" hidden></div>
 
+<div id="lightbox" hidden>
+    <div class="pair">
+        <figure>
+            <img id="lbCand" alt="">
+            <figcaption id="lbName">catalog</figcaption>
+        </figure>
+        <figure>
+            <img id="lbMine" alt="">
+            <figcaption>your photo</figcaption>
+        </figure>
+    </div>
+    <button class="close" id="lbClose">Close</button>
+</div>
+
 <script>
 const $ = id => document.getElementById(id);
 const MAX_KB = @json($maxUploadKb);
@@ -159,6 +195,27 @@ $('clear').addEventListener('click', () => {
 
 $('send').addEventListener('click', identify);
 
+/* Delegated, because the candidate rows are rebuilt on every query and a
+   listener bound to the images would be lost with them. */
+$('results').addEventListener('click', e => {
+    const img = e.target.closest('img[data-big]');
+    if (!img) return;
+    $('lbCand').src = img.dataset.big;
+    $('lbName').textContent = img.closest('.cand')?.querySelector('.name')?.textContent || 'catalog';
+    $('lbMine').src = $('previewImg').src;
+    $('lightbox').hidden = false;
+});
+
+function closeLightbox() { $('lightbox').hidden = true; }
+$('lbClose').addEventListener('click', closeLightbox);
+$('lightbox').addEventListener('click', e => {
+    // Anywhere outside the two images, which is the gesture people try first.
+    if (e.target.tagName !== 'IMG') closeLightbox();
+});
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeLightbox();
+});
+
 function say(html, cls = '') {
     const el = $('status');
     el.className = 'panel ' + cls;
@@ -184,7 +241,10 @@ async function identify() {
     }
 
     $('send').disabled = true;
-    say('Identifying&hellip; first request after a restart pays for model loading.');
+    // Says what is happening and how long it may take. The old text explained
+    // an implementation detail -- OCR model loading -- which tells a user
+    // nothing they can act on and reads like a fault.
+    say('Identifying&hellip; this takes a few seconds.');
 
     const body = new FormData();
     body.append('photo', file);
@@ -300,11 +360,18 @@ function render(data) {
 
     box.innerHTML = cands.map(c => {
         const cat = c.catalog || {};
-        const name = [cat.brand || c.brand, cat.model_code || c.model_code]
-            .filter(Boolean).join(' ') || c.record_id;
+        /* The catalogue's own title first. brand/model_code are what the
+           *extractor* read off a photograph and are null on most records, so
+           preferring them left every row named by its record_id -- a filename
+           stem, which names nothing a person recognises. */
+        const name = cat.title
+            || [cat.brand || c.brand, cat.model_code || c.model_code].filter(Boolean).join(' ')
+            || c.record_id;
+        const src = PHOTO_URL.replace('__ID__', encodeURIComponent(c.record_id));
         return `<div class="cand">
-            <img src="${PHOTO_URL.replace('__ID__', encodeURIComponent(c.record_id))}"
-                 alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+            <img src="${src}" alt="" loading="lazy" data-big="${src}"
+                 title="Tap to enlarge"
+                 onerror="this.style.visibility='hidden'">
             <div class="meta">
                 <div class="name">${esc(name)}</div>
                 <div class="nums">

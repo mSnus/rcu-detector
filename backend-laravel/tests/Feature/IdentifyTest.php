@@ -254,6 +254,7 @@ class IdentifyTest extends TestCase
             'fingerprint' => ['v' => 2],
             'brand_text' => 'Sony',
             'model_text' => 'RM-PJ20R',
+            'title' => 'Sony RM-PJ20R projector remote',
             'quality_score' => 0.935,
             'reviewed' => true,
         ]);
@@ -262,6 +263,11 @@ class IdentifyTest extends TestCase
 
         $this->postJson('/api/identify', ['photo' => $this->photo()])
             ->assertOk()
+            // The catalogue's own name for the product. Without it a client has
+            // only the record_id, a filename stem naming nothing a person
+            // recognises -- brand_text/model_text are what the extractor read
+            // off the photograph and are null on most records.
+            ->assertJsonPath('candidates.0.catalog.title', 'Sony RM-PJ20R projector remote')
             ->assertJsonPath('candidates.0.catalog.model_id', 77)
             ->assertJsonPath('candidates.0.catalog.source_image', 'Sony_RM-PJ20_big.jpg')
             ->assertJsonPath('candidates.0.catalog.button_count', 26)
