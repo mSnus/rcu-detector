@@ -6,6 +6,7 @@
 #   ./docker/resync-catalog.sh                      # index, import, verify
 #   ./docker/resync-catalog.sh --calibrate          # ... and sweep the bands
 #   ./docker/resync-catalog.sh --snapshot           # serve a build in progress
+#   ./docker/resync-catalog.sh --catalog-codes      # ... and take codes from titles
 #   DOCKER='sudo -n docker' ./docker/resync-catalog.sh   # rcud: no docker group
 #
 # There are two consumers of an extraction and they must come from the same
@@ -31,6 +32,7 @@ CHECK_DECODE=0
 SAMPLE=${SAMPLE:-500}
 FORCE=0
 SNAPSHOT=0
+CATALOG_CODES=0
 FP_NAME=fp
 
 while [ $# -gt 0 ]; do
@@ -39,6 +41,7 @@ while [ $# -gt 0 ]; do
         --check-decode) CHECK_DECODE=1; shift ;;
         --sample) SAMPLE="$2"; shift 2 ;;
         --snapshot) SNAPSHOT=1; shift ;;
+        --catalog-codes) CATALOG_CODES=1; shift ;;
         --force) FORCE=1; shift ;;
         -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -155,6 +158,24 @@ if [ "$CHECK_DECODE" -eq 1 ]; then
     # differently -- see the gotcha in CLAUDE.md.
     $COMPOSE --profile build run --rm --entrypoint python extract \
         scripts/check_decode.py --dir /data/files
+fi
+
+# ------------------------------------------------- 2b. codes from the catalogue
+
+# The catalogue knows each remote's model code exactly; the extractor has to
+# read it off whatever image survived, and gets it slightly wrong often enough
+# to matter -- an exact agreement is worth twice a fuzzy one in the fusion.
+# Runs before the index, because build_index tokenises the code.
+if [ "$CATALOG_CODES" -eq 1 ]; then
+    say "taking model codes from the catalogue titles"
+    # stdout, because the Laravel container mounts work/ read-only. The
+    # diagnostic goes to stderr and must stay out of the file.
+    $COMPOSE exec -T laravel php artisan rcu:export-titles --out=- > "$WORK/titles.tsv"
+    echo "$(grep -c . "$WORK/titles.tsv") title(s) exported"
+
+    $COMPOSE --profile build run --rm --entrypoint python extract \
+        scripts/apply_catalog_codes.py --fp "/data/work/$FP_NAME" \
+            --titles /data/work/titles.tsv
 fi
 
 # --------------------------------------------------------------- 3. the index
