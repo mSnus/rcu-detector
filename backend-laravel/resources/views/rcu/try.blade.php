@@ -67,8 +67,17 @@
             width: 64px; height: 104px; object-fit: contain;
             background: #0d1117; border-radius: 4px; flex: none;
         }
+        /* One column of photographs per model: an original and a compatible
+           copy are different products with different pictures, and seeing them
+           side by side is how you tell which one is in your hand. */
+        .cand .shots { display: flex; flex-direction: column; gap: 6px; flex: none; }
         .cand .meta { flex: 1; min-width: 0; }
         .cand .name { font-weight: 600; word-break: break-all; }
+        .cand .name a { color: var(--ink); text-decoration: underline; }
+        .cand .name a:hover { color: var(--high); }
+        .variant { margin-top: 8px; }
+        .variant + .variant { border-top: 1px dashed var(--line); padding-top: 8px; }
+        .variant a { color: var(--ink); }
         .cand .nums { color: var(--dim); font-size: 12px; }
         .cand button { margin-top: 6px; }
         /* Tapping a candidate opens it beside the photograph that was sent.
@@ -358,36 +367,96 @@ function render(data) {
         return;
     }
 
-    box.innerHTML = cands.map(c => {
-        const cat = c.catalog || {};
-        /* The catalogue's own title first. brand/model_code are what the
-           *extractor* read off a photograph and are null on most records, so
-           preferring them left every row named by its record_id -- a filename
-           stem, which names nothing a person recognises. */
-        const name = cat.title
-            || [cat.brand || c.brand, cat.model_code || c.model_code].filter(Boolean).join(' ')
-            || c.record_id;
-        const src = PHOTO_URL.replace('__ID__', encodeURIComponent(c.record_id));
-        return `<div class="cand">
-            <img src="${src}" alt="" loading="lazy" data-big="${src}"
-                 title="Tap to enlarge"
-                 onerror="this.style.visibility='hidden'">
-            <div class="meta">
-                <div class="name">${esc(name)}</div>
-                <div class="nums">
-                    score ${c.score?.toFixed(3) ?? '—'}
-                    &middot; ${c.inliers ?? '—'} inliers
-                    &middot; ${cat.button_count ?? '—'} buttons
-                    ${orientationNote(c.orientation)}
-                </div>
-                <div class="nums">${esc(c.record_id)}</div>
-                <button data-choose="${esc(c.record_id)}">That's it</button>
-            </div>
-        </div>`;
-    }).join('') + feedbackOnlyButton();
+    box.innerHTML = groupByModel(cands).map(renderGroup).join('') + feedbackOnlyButton();
 
     box.hidden = false;
     wireFeedback();
+}
+
+/* One remote can be in the catalogue several times over -- an original and a
+   compatible copy are separate products with separate photographs, and both
+   are correct answers to "what is this". Listing them as unrelated candidates
+   makes a right answer look like an uncertain one.
+
+   Grouped on the model code, which is the catalogue's own identifier for a
+   remote and, since the codes came from the titles, present on most records.
+   A record with no code is its own group: grouping on the title instead would
+   merge remotes that merely share a description, which is most of them. */
+function groupByModel(cands) {
+    const groups = [];
+    const byKey = new Map();
+
+    for (const c of cands) {
+        const cat = c.catalog || {};
+        const key = cat.model_code || c.model_code || `id:${c.record_id}`;
+        let g = byKey.get(key);
+        if (!g) {
+            // Candidates arrive sorted, so the first member of a group is its
+            // best and the groups come out in score order for free.
+            g = {key, code: cat.model_code || c.model_code || null, members: []};
+            byKey.set(key, g);
+            groups.push(g);
+        }
+        g.members.push(c);
+    }
+    return groups;
+}
+
+function renderGroup(g) {
+    const top = g.members[0];
+    const cat = top.catalog || {};
+    /* The catalogue's own title first. brand/model_code are what the
+       *extractor* read off a photograph and are null on most records, so
+       preferring them left every row named by its record_id -- a filename
+       stem, which names nothing a person recognises. */
+    const heading = g.code
+        || cat.title
+        || [cat.brand || top.brand].filter(Boolean).join(' ')
+        || top.record_id;
+
+    const link = cat.item_url
+        ? `<a href="${esc(cat.item_url)}" target="_blank" rel="noopener">${esc(heading)}</a>`
+        : esc(heading);
+
+    const photos = g.members.map(m => {
+        const src = PHOTO_URL.replace('__ID__', encodeURIComponent(m.record_id));
+        return `<img src="${src}" alt="" loading="lazy" data-big="${src}"
+                     title="Tap to enlarge"
+                     onerror="this.style.visibility='hidden'">`;
+    }).join('');
+
+    const rows = g.members.map(m => {
+        const mc = m.catalog || {};
+        // The title repeats the code it was parsed out of, and the code is
+        // already the heading. Strip it so the variant reads as what it is --
+        // "оригинальный", "неоригинальный" -- rather than the same line twice.
+        let label = mc.title || m.record_id;
+        if (g.code && label.toUpperCase().startsWith(g.code.toUpperCase())) {
+            label = label.slice(g.code.length).replace(/^[\s,;-]+/, '');
+        }
+        const u = mc.item_url
+            ? `<a href="${esc(mc.item_url)}" target="_blank" rel="noopener">${esc(label)}</a>`
+            : esc(label);
+        return `<div class="variant">
+            <div>${u}</div>
+            <div class="nums">
+                score ${m.score?.toFixed(3) ?? '—'}
+                &middot; ${m.inliers ?? '—'} inliers
+                &middot; ${mc.button_count ?? '—'} buttons
+                ${orientationNote(m.orientation)}
+                &middot; <span class="dim">${esc(m.record_id)}</span>
+            </div>
+            <button data-choose="${esc(m.record_id)}">That's it</button>
+        </div>`;
+    }).join('');
+
+    return `<div class="cand">
+        <div class="shots">${photos}</div>
+        <div class="meta">
+            <div class="name">${link}</div>
+            ${rows}
+        </div>
+    </div>`;
 }
 
 /* The service returns a hint as a token, because it is an API and an enum is

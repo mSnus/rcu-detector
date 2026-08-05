@@ -268,6 +268,10 @@ class IdentifyTest extends TestCase
             // recognises -- brand_text/model_text are what the extractor read
             // off the photograph and are null on most records.
             ->assertJsonPath('candidates.0.catalog.title', 'Sony RM-PJ20R projector remote')
+            // The link back to the source catalogue, so a client can offer it
+            // without knowing the template or the node id scheme.
+            ->assertJsonPath('candidates.0.catalog.item_url',
+                str_replace('{id}', '77', config('rcu.catalog.item_url')))
             ->assertJsonPath('candidates.0.catalog.model_id', 77)
             ->assertJsonPath('candidates.0.catalog.source_image', 'Sony_RM-PJ20_big.jpg')
             ->assertJsonPath('candidates.0.catalog.button_count', 26)

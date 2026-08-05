@@ -204,6 +204,9 @@ class IdentifyController extends Controller
                 // are what the *extractor* read off the photograph and are
                 // null far more often than the catalogue is silent.
                 'title' => $f->title,
+                // Link back to the source catalogue. Built from model_id and a
+                // config template by the model, so the domain is one edit.
+                'item_url' => $f->itemUrl(),
                 'model_id' => $f->model_id,
                 'source_image' => $f->source_image,
                 'button_count' => $f->button_count,
