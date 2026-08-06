@@ -286,8 +286,23 @@ def detect_bodies_with_mask(img: np.ndarray) -> tuple[list[dict], np.ndarray]:
         # cannot have been separating body from background. See
         # `min_plausible_area_frac` -- the second case is the common one and
         # used to sail through, because a fragment is still a body.
-        implausible = (len(bodies) == 1
-                       and bodies[0]["area_frac"] < CFG.body.min_plausible_area_frac)
+        # The bodies *together* must explain a plausible share of the frame.
+        # Stated over the total rather than over a single body because the same
+        # failure fragments into several pieces just as readily: the Elenberg
+        # DVDP-2417's mask kept only its keycaps, and the pieces came back as a
+        # strip down the left keypad column (2.5% of frame) plus a sliver at
+        # the bottom. Neither is a remote; together they are 8% of a frame that
+        # is entirely remote.
+        #
+        # Deliberately the same floor as the single-body case, and deliberately
+        # not higher. Total coverage across the 1701 multi-body images is
+        # bimodal -- p25 0.12, median 0.32, p75 0.67 -- and it is tempting to
+        # cut at the median. But the 876 images below 0.35 average quality
+        # 0.732 against 0.803 above it, which is not the signature of a
+        # population that is broken; only the deep tail is. Two remotes side by
+        # side fill the frame, and fusing them into one fingerprint is a bug
+        # this project has already had (RM-L859-1).
+        implausible = sum(b["area_frac"] for b in bodies) < CFG.body.min_plausible_area_frac
         if not bodies or implausible:
             whole = _full_frame_body(img)
             # _full_frame_body applies its own guard: it returns nothing unless
