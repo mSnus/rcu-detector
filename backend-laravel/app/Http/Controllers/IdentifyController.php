@@ -56,6 +56,13 @@ class IdentifyController extends Controller
             // A rejected image is a verdict on the upload and retrying it
             // changes nothing, so it must not be dressed up as an outage.
             if ($e->isRejection()) {
+                // Recorded on the row, not only returned to the caller. The
+                // row already exists -- it is written before the call so an
+                // upload survives a failure -- and left untouched it reads as
+                // `confidence: none`, which is what a remote nothing matched
+                // looks like. See the migration.
+                $query->update(['error' => 'image_rejected']);
+
                 return response()->json([
                     'error' => 'image_rejected',
                     // The service's own reason when it gave one: "could not
@@ -67,6 +74,8 @@ class IdentifyController extends Controller
                     'request_id' => $query->request_id,
                 ], 422);
             }
+
+            $query->update(['error' => 'recognition_unavailable']);
 
             return response()->json([
                 'error' => 'recognition_unavailable',

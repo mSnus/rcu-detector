@@ -241,6 +241,25 @@ class IdentifyTest extends TestCase
      * A record_id is a fingerprint stem and means nothing to a client, so each
      * candidate carries its catalog row.
      */
+    public function test_a_service_failure_is_recorded_as_one(): void
+    {
+        // The row is written before the service is called so an upload always
+        // survives. Left untouched by a failure it reads `confidence: none`,
+        // which is what a remote nothing matched looks like -- and plan 10.1
+        // makes acceptance rate over this table the main health metric, so an
+        // outage would move it in the same direction as a real regression.
+        Http::fake(['*/identify*' => Http::response('gateway down', 502)]);
+
+        $this->postJson('/api/identify', ['photo' => $this->photo()])
+            ->assertStatus(503)
+            ->assertJsonPath('error', 'recognition_unavailable');
+
+        $this->assertDatabaseHas('rcu_queries', [
+            'error' => 'recognition_unavailable',
+            'top_record_id' => null,
+        ]);
+    }
+
     public function test_it_resolves_candidates_against_the_catalog(): void
     {
         RcuFingerprint::create([

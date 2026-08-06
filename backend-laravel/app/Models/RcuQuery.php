@@ -21,7 +21,7 @@ class RcuQuery extends Model
 
     protected $fillable = [
         'request_id', 'upload_path', 'candidates', 'extracted', 'top_score',
-        'top_record_id', 'confidence', 'hint', 'chosen_record_id',
+        'top_record_id', 'confidence', 'error', 'hint', 'chosen_record_id',
         'none_of_these', 'answered_at', 'latency_ms', 'bodies_found',
         'model_code_fast_path',
     ];

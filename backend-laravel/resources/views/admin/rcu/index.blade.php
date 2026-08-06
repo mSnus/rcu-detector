@@ -47,7 +47,17 @@
                     <tr>
                         <td class="dim">{{ $q->created_at?->format('m-d H:i') }}</td>
                         <td><a href="{{ route('admin.rcu.show', $q->request_id) }}">{{ Str::limit($q->request_id, 16, '') }}</a></td>
-                        <td><span class="tag {{ $q->confidence }}">{{ $q->confidence }}</span></td>
+                        <td>
+                            @if ($q->error)
+                                {{-- A failure is not a verdict. Showing it as
+                                     `none` makes an outage look like a remote
+                                     nothing matched, and they are fixed by
+                                     opposite things. --}}
+                                <span class="tag none" title="the service never answered">{{ $q->error }}</span>
+                            @else
+                                <span class="tag {{ $q->confidence }}">{{ $q->confidence }}</span>
+                            @endif
+                        </td>
                         <td>{{ $q->top_record_id ?? '—' }}</td>
                         <td class="num">{{ $q->top_score !== null ? number_format($q->top_score, 3) : '—' }}</td>
                         <td class="num">{{ $top['inliers'] ?? '—' }}</td>
