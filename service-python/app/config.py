@@ -55,6 +55,29 @@ class BodyConfig:
     # inset the frame slightly; catalog crops usually keep a hairline border
     full_frame_inset: float = 0.01
 
+    # The fallback above used to fire only when segmentation found *nothing*,
+    # which missed the commonest form of the same failure: a body the same
+    # colour as the backdrop -- light grey on white, white on white -- where
+    # the border estimate lands on the product, the mask inverts, and what
+    # survives as foreground is only the high-contrast interior. A fragment of
+    # that is then returned as a confident body, so `not bodies` is never true.
+    #
+    # Two records, both extracted from a ~6% fragment, with the frame treated
+    # as the body instead:
+    #
+    #   8081000_0                   3 buttons q=0.425  ->  16 buttons q=0.956
+    #   Electrolux-YAC1FBI-copy_0   1 button  q=0.443  ->  19 buttons
+    #
+    # A body under this fraction of a frame that is itself remote-shaped is not
+    # a remote. 1566 of 12669 records (12.4%) carry that signature.
+    #
+    # Only when exactly ONE body was found: several small bodies is what two
+    # remotes side by side legitimately look like, and 21.7% of the catalogue
+    # is that. A cheaper test -- border colour close to interior colour -- was
+    # measured first and rejected: it fires on 28% of bad extractions and 12%
+    # of good ones, which is not a discriminator.
+    min_plausible_area_frac: float = 0.15
+
 
 @dataclass
 class NormalizeConfig:

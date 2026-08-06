@@ -281,8 +281,21 @@ def detect_bodies_with_mask(img: np.ndarray) -> tuple[list[dict], np.ndarray]:
     # segmentation the pipeline had rejected.
     mask = otsu_mask if otsu_won else lab_mask
 
-    if not bodies and CFG.body.full_frame_fallback:
-        bodies = _full_frame_body(img)
+    if CFG.body.full_frame_fallback:
+        # Nothing found at all, or one fragment small enough that the mask
+        # cannot have been separating body from background. See
+        # `min_plausible_area_frac` -- the second case is the common one and
+        # used to sail through, because a fragment is still a body.
+        implausible = (len(bodies) == 1
+                       and bodies[0]["area_frac"] < CFG.body.min_plausible_area_frac)
+        if not bodies or implausible:
+            whole = _full_frame_body(img)
+            # _full_frame_body applies its own guard: it returns nothing unless
+            # the frame is itself remote-shaped. When it declines, keep what we
+            # had -- a poor body beats no body, and this is exactly the check
+            # that stops a square thumbnail or a banner becoming one.
+            if whole:
+                bodies = whole
     return bodies, mask
 
 
