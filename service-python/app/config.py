@@ -151,7 +151,26 @@ class ButtonConfig:
     # Adaptive-threshold block sizes, as fractions of the crop WIDTH.
     # Absolute pixel sizes do not survive a change of crop resolution: a
     # block that works at 400px finds nothing at 900px.
-    block_fracs: tuple = (0.045, 0.075, 0.115)
+    #
+    # The largest of these has to exceed the largest BUTTON, not merely be
+    # large: adaptive thresholding compares a pixel to the mean of its block,
+    # so a block smaller than the feature sees the feature's interior as its
+    # own background and only fragments of the rim survive the area floor.
+    # Denon RC-982 (record 2789) is 152x616 at source, rectified to 400x1763,
+    # and its keys are ~14% of crop width against a largest block of 11.5%:
+    # every pass returned **zero** buttons on a remote with forty obvious ones.
+    #
+    #   block frac   0.045  0.075  0.115  0.150  0.200  0.250  0.300
+    #   buttons          0      0      0      5     23     40     40
+    #
+    # Adding 0.25 across 23 records: 21 unchanged or better, one worse by 2,
+    # total detections 494 -> 573. The ones it rescues are the records this
+    # project already knew were bad -- Huayu_RM-530F 2 -> 7, Prestigio_KF-7777A
+    # 24 -> 34, ClickPdu_RM-D1110 7 -> 12.
+    #
+    # Costs two more passes (one per polarity). detect_buttons is ~70 ms of a
+    # 2900 ms extraction, so this is not where the time goes.
+    block_fracs: tuple = (0.045, 0.075, 0.115, 0.25)
     adaptive_c: int = 5
     # two detections overlapping by more than this are the same button
     dedupe_iou: float = 0.35
