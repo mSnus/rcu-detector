@@ -147,8 +147,32 @@ def _pass(gray: np.ndarray, block: int, invert: bool = True,
     if close:
         th = cv2.morphologyEx(th, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
 
-    contours, _ = cv2.findContours(th, cv2.RETR_EXTERNAL,
-                                   cv2.CHAIN_APPROX_SIMPLE)
+    # CCOMP, not EXTERNAL. RETR_EXTERNAL returns only contours that are not
+    # inside another one, and on a remote with a dark bezel around a lighter
+    # recessed panel the bezel is one region, the panel is a *hole* in it, and
+    # every key inside that panel is invisible. Jetbalance JB-473 returned the
+    # whole 400x1364 crop as a single contour at every block size and both
+    # polarities, and its six obvious keys -- 70 grey levels of contrast --
+    # were never detected at all.
+    #
+    # `_drop_nested` was written for exactly this ("a detection containing 3+
+    # others is a recessed panel, drop the container, keep the contents") and
+    # could never fire, because the contents were never returned to it.
+    #
+    # CCOMP gives a two-level hierarchy: outer boundaries of foreground
+    # components, and the holes inside them. Components sitting inside a hole
+    # come back as top level again, which is what recovers the keys. Keeping
+    # only top level (`h[3] == -1`) is what keeps this from doubling every
+    # count: a hole contour is the inside of a ring whose outside is already a
+    # detection. Measured over 23 records, total detections:
+    #
+    #   RETR_EXTERNAL   933   (keys inside a panel are lost)
+    #   RETR_CCOMP     1059   (+13%)
+    #   RETR_LIST      1596   (+71%, every ring counted twice)
+    contours, hierarchy = cv2.findContours(th, cv2.RETR_CCOMP,
+                                           cv2.CHAIN_APPROX_SIMPLE)
+    contours = ([] if hierarchy is None else
+                [c for c, h in zip(contours, hierarchy[0]) if h[3] == -1])
     found: list[dict] = []
     for c in contours:
         area = cv2.contourArea(c)
