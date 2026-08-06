@@ -78,6 +78,27 @@ class BodyConfig:
     # of good ones, which is not a discriminator.
     min_plausible_area_frac: float = 0.15
 
+    # And a second reading of the same question, for the case the area floor
+    # misses: do the bodies, taken together, *span* the frame?
+    #
+    # 8081000 is a photograph of one remote. Segmentation returned two bodies
+    # -- two vertical slabs side by side, both covering only y 241-580 of a
+    # 785-tall frame -- so the area total is 0.31 and clears the floor, while
+    # their union bounding box covers 0.32 of the frame. Two remotes in one
+    # photograph fill it; fragments of one remote sit in a band.
+    #
+    # Measured over multi-body images, union bbox as a fraction of the frame:
+    #
+    #   total area < 0.15    median 0.07   100% below 0.60
+    #   total area 0.15-0.45 median 0.44    76% below 0.60
+    #   total area >= 0.45   median 0.90     2% below 0.60
+    #
+    # So this costs about 2% of genuine pairs and recovers three quarters of
+    # the middle band. Applied only when there is more than one body: a single
+    # body is already judged on area, and a lone real remote in a loose frame
+    # would otherwise be replaced by the frame for no reason.
+    min_bodies_span_frac: float = 0.60
+
 
 @dataclass
 class NormalizeConfig:

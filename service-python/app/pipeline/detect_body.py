@@ -303,6 +303,14 @@ def detect_bodies_with_mask(img: np.ndarray) -> tuple[list[dict], np.ndarray]:
         # side fill the frame, and fusing them into one fingerprint is a bug
         # this project has already had (RM-L859-1).
         implausible = sum(b["area_frac"] for b in bodies) < CFG.body.min_plausible_area_frac
+
+        # Several bodies that do not span the frame are pieces of one remote,
+        # not several remotes. See `min_bodies_span_frac`.
+        if not implausible and len(bodies) > 1:
+            pts = np.concatenate([cv2.boxPoints(b["rect"]) for b in bodies])
+            span = ((pts[:, 0].max() - pts[:, 0].min())
+                    * (pts[:, 1].max() - pts[:, 1].min()))
+            implausible = span / float(img.shape[0] * img.shape[1]) < CFG.body.min_bodies_span_frac
         if not bodies or implausible:
             whole = _full_frame_body(img)
             # _full_frame_body applies its own guard: it returns nothing unless
