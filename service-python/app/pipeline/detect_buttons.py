@@ -119,13 +119,21 @@ def _rescue_ring(contour, area: float, w: int, h: int, aspect: float,
     return area, fill, shape_contour
 
 
-def _pass(gray: np.ndarray, block: int, invert: bool = True) -> list[dict]:
+def _pass(gray: np.ndarray, block: int, invert: bool = True,
+          close: bool = True) -> list[dict]:
     """One detection pass.
 
     invert=True finds regions darker than their surroundings, invert=False
     finds lighter ones. Both are needed: a dark body with light buttons (the
     AKAI RC-51A) and a light body with dark buttons both occur, sometimes on
     the same remote.
+
+    `close` runs the morphological closing that repairs a button whose outline
+    came out broken. It also *bridges* buttons that sit close together, and on
+    a dense keypad that turns a row of keys into one bar which then fails the
+    aspect test. JVC RM-SRSWP1J returned 36 buttons without it and **zero**
+    with it, at every block size and both polarities. So the caller runs both
+    and lets the vote decide, rather than this guessing which remote it is on.
     """
     cfg = CFG.button
     H, W = gray.shape
@@ -136,7 +144,8 @@ def _pass(gray: np.ndarray, block: int, invert: bool = True) -> list[dict]:
         cv2.THRESH_BINARY_INV if invert else cv2.THRESH_BINARY,
         block, cfg.adaptive_c if invert else -cfg.adaptive_c)
     th = cv2.morphologyEx(th, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-    th = cv2.morphologyEx(th, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+    if close:
+        th = cv2.morphologyEx(th, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
 
     contours, _ = cv2.findContours(th, cv2.RETR_EXTERNAL,
                                    cv2.CHAIN_APPROX_SIMPLE)
@@ -186,11 +195,18 @@ def detect_buttons(crop: np.ndarray, ensemble: bool = True) -> list[dict]:
 
     # Run every pass first, then discard the ones that clearly failed. A pass
     # that returns nothing must not be allowed to veto a pass that worked.
+    # Every block is run twice, closed and open. Closing repairs a broken
+    # outline and bridges neighbouring keys, and which of those it does depends
+    # on the remote, not on anything measurable beforehand -- so both go into
+    # the vote. Measured over 23 records: total detections 553 -> 832, no
+    # record driven to zero, and the overlays show the new boxes on real keys.
+    # Doubles the passes; detect_buttons is ~70 ms of a 2900 ms extraction.
     passes: list[tuple[str, list[dict]]] = []
     for invert in (True, False):
         for block in blocks:
-            passes.append(("dark" if invert else "light",
-                           _pass(gray, block, invert=invert)))
+            for close in (True, False):
+                passes.append(("dark" if invert else "light",
+                               _pass(gray, block, invert=invert, close=close)))
 
     raw = [(p, f) for p, f in passes if len(f) >= cfg.min_pass_yield]
 
