@@ -116,7 +116,17 @@ class BodyConfig:
     # catalogue 90.8% of images give one body and 5.4% give two; more than
     # three covers 262 images (2.3%), whose mean quality is 0.711 against a
     # catalogue median of 0.86.
-    max_plausible_bodies: int = 3
+    # One remote per photograph is the rule; two is allowed only on strong
+    # evidence, and more is always a fragmented mask. 90.8% of the rebuilt
+    # catalogue gives one body and 5.4% gives two, so this costs almost nothing
+    # and removes the whole class where strips of one keypad pass as several
+    # remotes.
+    max_plausible_bodies: int = 2
+    # What "very sure" means for a pair: each of the two must be a substantial
+    # object in its own right, and together they must span the frame the way
+    # two products photographed side by side do. A pair that fails either test
+    # is two pieces of one remote.
+    pair_min_each_area_frac: float = 0.15
 
 
 @dataclass

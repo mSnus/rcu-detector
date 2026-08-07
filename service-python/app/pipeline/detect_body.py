@@ -302,11 +302,24 @@ def detect_bodies_with_mask(img: np.ndarray) -> tuple[list[dict], np.ndarray]:
         # population that is broken; only the deep tail is. Two remotes side by
         # side fill the frame, and fusing them into one fingerprint is a bug
         # this project has already had (RM-L859-1).
-        # Too many is its own kind of implausible: a mask that fragmented along
-        # the rows of a keypad gives strips that are individually the right
-        # size and shape, and collectively cover the remote, so neither the
-        # area floor nor the span test objects. See `max_plausible_bodies`.
+        # Count first. A mask that fragmented along the rows of a keypad gives
+        # strips that are individually the right size and shape and together
+        # cover the remote, so neither the area floor nor the span test
+        # objects -- only the count does. See `max_plausible_bodies`.
         implausible = len(bodies) > CFG.body.max_plausible_bodies
+
+        # A pair is accepted only on strong evidence, because two remotes side
+        # by side and one remote split down the middle look alike by count.
+        # Both halves of a genuine pair are substantial objects and the two
+        # together fill the frame; a split does neither.
+        if not implausible and len(bodies) == 2:
+            each = min(b["area_frac"] for b in bodies)
+            pts = np.concatenate([cv2.boxPoints(b["rect"]) for b in bodies])
+            span = ((pts[:, 0].max() - pts[:, 0].min())
+                    * (pts[:, 1].max() - pts[:, 1].min())) / float(
+                        img.shape[0] * img.shape[1])
+            implausible = (each < CFG.body.pair_min_each_area_frac
+                           or span < CFG.body.min_bodies_span_frac)
 
         if not implausible:
             implausible = (sum(b["area_frac"] for b in bodies)
