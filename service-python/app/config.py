@@ -99,6 +99,25 @@ class BodyConfig:
     # would otherwise be replaced by the frame for no reason.
     min_bodies_span_frac: float = 0.60
 
+    # And a count. The two tests above ask whether the bodies are big enough
+    # and spread enough; neither catches a mask that fragmented along the
+    # *rows* of a keypad, because the strips are individually plausible and
+    # together they cover the remote.
+    #
+    # NetUP_Android_IP_STB -- a black remote on a dark ground -- came back as
+    # ten bodies, each one horizontal row of keys, aspect 5.8 to 6.8, 2.5% of
+    # frame each. Total area 0.263 clears the 0.15 floor and union span 0.746
+    # clears the 0.60 floor, so both guards passed a segmentation that had
+    # found ten remotes in a photograph of one. Treated as a full frame it
+    # yields 60 buttons.
+    #
+    # A catalogue photograph holds one remote, sometimes two colour variants
+    # side by side, occasionally three. It does not hold ten. In the rebuilt
+    # catalogue 90.8% of images give one body and 5.4% give two; more than
+    # three covers 262 images (2.3%), whose mean quality is 0.711 against a
+    # catalogue median of 0.86.
+    max_plausible_bodies: int = 3
+
 
 @dataclass
 class NormalizeConfig:

@@ -302,7 +302,15 @@ def detect_bodies_with_mask(img: np.ndarray) -> tuple[list[dict], np.ndarray]:
         # population that is broken; only the deep tail is. Two remotes side by
         # side fill the frame, and fusing them into one fingerprint is a bug
         # this project has already had (RM-L859-1).
-        implausible = sum(b["area_frac"] for b in bodies) < CFG.body.min_plausible_area_frac
+        # Too many is its own kind of implausible: a mask that fragmented along
+        # the rows of a keypad gives strips that are individually the right
+        # size and shape, and collectively cover the remote, so neither the
+        # area floor nor the span test objects. See `max_plausible_bodies`.
+        implausible = len(bodies) > CFG.body.max_plausible_bodies
+
+        if not implausible:
+            implausible = (sum(b["area_frac"] for b in bodies)
+                           < CFG.body.min_plausible_area_frac)
 
         # Several bodies that do not span the frame are pieces of one remote,
         # not several remotes. See `min_bodies_span_frac`.
