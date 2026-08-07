@@ -123,6 +123,24 @@ class NormalizeConfig:
     # side rejects all 75 thumbnails and none of them.
     min_source_long_side: int = 600
 
+    # A crop is only turned upside down when the geometry is *sure*. The old
+    # bar was `not ambiguous`, i.e. confidence >= 0.25, which is barely better
+    # than a coin toss: the Supra STV-LC1504 was flipped at 0.596, its single
+    # OCR pass then read an inverted crop and returned zero text, and the model
+    # code printed plainly at the bottom was lost.
+    #
+    # Flipping the wrong way is not symmetric with leaving it alone. Almost
+    # every photograph, from a catalogue shoot or from a phone, is taken
+    # roughly upright; the prior strongly favours "as given", and a wrong flip
+    # costs the text as well as the geometry. Where the evidence is weak the
+    # honest answer is to leave the crop alone and let the *matcher* try both
+    # ways -- which it already does, on both sides.
+    #
+    # Measured over the 13584-record catalogue: 493 records (3.6%) are flipped,
+    # 288 of them at confidence 1.00 from the text signal. Only 130 (0.96%)
+    # flip on evidence below 0.75.
+    flip_min_confidence: float = 0.75
+
     # And a ceiling, in pixels rather than bytes. A 12924x3144 upload -- 41 MP,
     # 9 MB, well inside max_upload_bytes -- OOM-killed the service on rcud
     # inside its 1 GB limit and returned a 503 to the caller. Bytes are not the
@@ -335,10 +353,13 @@ class OcrConfig:
     # was lost. The same image on the build path reads STV-LC1504 at
     # confidence 1.00.
     #
-    # 0.6 matches index.orientation_trust_conf, which is the same judgement
-    # made on the catalog side. About 9% of records fall below it, so this is
-    # the cost of a second OCR pass on roughly one query in eleven.
-    query_text_orientation_below_conf: float = 0.6
+    # Kept equal to normalize.flip_min_confidence, so there is one rule rather
+    # than two: below the confidence at which geometry is allowed to turn a
+    # crop over, its verdict is not acted on *and* not relied upon -- the query
+    # re-reads both ways and the text decides. Leaving these unequal opens a
+    # band where a query is neither flipped nor re-read, which is the worst of
+    # both. About 4% of records fall below 0.75.
+    query_text_orientation_below_conf: float = 0.75
 
     # --- source watermark suppression --------------------------------------
     # Catalogue images scraped from a site usually carry that site's watermark
@@ -584,7 +605,12 @@ class IndexConfig:
     index_both_orientations: bool = False
     # Used only when index_both_orientations is False: below this confidence a
     # record is still indexed both ways up.
-    orientation_trust_conf: float = 0.6
+    # Kept in step with normalize.flip_min_confidence: anything the pipeline
+    # was not confident enough to turn over must be retrievable both ways up,
+    # or a record we left upright on weak evidence -- and which really is
+    # upside down -- can be indexed one way and never found. 40 records sit in
+    # the band this widens.
+    orientation_trust_conf: float = 0.75
     # Whether a QUERY's own orientation confidence may be trusted the same way
     # a catalog record's is.
     #

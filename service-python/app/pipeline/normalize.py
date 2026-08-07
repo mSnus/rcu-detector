@@ -131,7 +131,10 @@ def resolve_orientation(crop: np.ndarray,
     # nearly all catalog imagery) and flag the crop for dual indexing
     ambiguous = confidence < 0.25
     return {
-        "flip": bool(score < 0 and not ambiguous),
+        # Sure, not merely not-unsure. See `flip_min_confidence`: leaving a
+        # crop as photographed is the safe error, turning it over is not.
+        "flip": bool(score < 0
+                     and confidence >= CFG.normalize.flip_min_confidence),
         "ambiguous": ambiguous,
         "confidence": confidence,
         "signals": {
