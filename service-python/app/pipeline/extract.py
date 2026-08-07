@@ -87,8 +87,15 @@ def extract_remotes(img: np.ndarray, ensemble: bool = True,
         # up we are committing to, and `regions` are in that crop's
         # coordinates. `buttons` are brought into line afterwards, once, by
         # rotation.
-        text_orientation = use_ocr and (not fast_ocr
-                                        or CFG.ocr.query_both_orientations)
+        # The query normally trusts geometry and OCRs once. It stops trusting
+        # it when geometry is not confident: a wrong flip means the single pass
+        # reads an upside-down crop, and brand and model code are lost for
+        # good. See `query_text_orientation_below_conf`.
+        text_orientation = use_ocr and (
+            not fast_ocr
+            or CFG.ocr.query_both_orientations
+            or orient.get("confidence", 1.0)
+                < CFG.ocr.query_text_orientation_below_conf)
 
         if text_orientation:
             # OCR both ways up before committing. Text is the strongest

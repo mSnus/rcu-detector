@@ -321,6 +321,24 @@ class OcrConfig:
     # query_is_ambiguous), so the second pass spends ~7 s deciding something
     # the matcher decides again regardless. Offline, the signal is worth it.
     query_both_orientations: bool = False
+    # ...but geometry is allowed to be *sure*. Below this confidence the query
+    # OCRs both ways after all, because the reasoning above only covers
+    # retrieval: the matcher deciding orientation again cannot recover text
+    # that was never read. A query commits to geometry's guess before its
+    # single OCR pass, so a wrong guess costs the brand and the model code --
+    # the largest single term in the fusion -- and nothing downstream can get
+    # them back.
+    #
+    # Supra STV-LC1504, photographed by hand: geometry said flipped at
+    # confidence 0.596, the one OCR pass read an upside-down crop and returned
+    # **zero** text regions, and the model code printed plainly at the bottom
+    # was lost. The same image on the build path reads STV-LC1504 at
+    # confidence 1.00.
+    #
+    # 0.6 matches index.orientation_trust_conf, which is the same judgement
+    # made on the catalog side. About 9% of records fall below it, so this is
+    # the cost of a second OCR pass on roughly one query in eleven.
+    query_text_orientation_below_conf: float = 0.6
 
     # --- source watermark suppression --------------------------------------
     # Catalogue images scraped from a site usually carry that site's watermark
