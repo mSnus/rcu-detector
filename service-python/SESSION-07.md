@@ -379,6 +379,104 @@ therefore changes fingerprints. A catalogue built under one engine and queried
 under another is the asymmetry this project keeps finding. Adopt OpenVINO on
 both paths at once, with a rebuild behind it.
 
+## The full catalogue, and the eight defects reviewing it exposed
+
+The rebuild finished: **13763 images asked for, 13763 accounted for, 0 never
+attempted** -- the first run to complete. 11495 extracted, 2267 excluded (2232
+too small, 35 no remote, 1 unreadable), and no `no features` exclusions at all,
+where the old build had ten.
+
+It was then re-extracted in part twice more, because reviewing the result found
+defects faster than the build could bake them in. Final state: **12311
+fingerprints, 12311 catalog rows, in step**, down from 13584 because 1273
+phantom crops were pruned.
+
+Every one of the eight was found the same way: opening a record in the review
+queue, looking at the overlay, and asking why. None came from a metric.
+
+**Four ways one remote became several, or none.** The mask inverts when the
+body is the same colour as the backdrop -- pale grey on white, beige on white,
+black on a dark ground -- because the background is estimated from the image
+border. What survives as foreground is the high-contrast interior, and a piece
+of it is returned as a confident body. `full_frame_fallback` was written for
+exactly this and fired only when segmentation found *nothing*, which is the one
+case that does not happen. It now fires when the bodies are implausible, tested
+four ways, each added after the previous one missed a real record:
+
+| test | added because |
+|---|---|
+| single body under 15% of frame | `Electrolux-YAC1FBI` -- 1 button, q 0.443 |
+| bodies *together* under 15% | `ElenbergDVDP-2417` -- a strip down one keypad column |
+| bodies not spanning 60% of frame | `8081000` -- two slabs covering one band |
+| more than two bodies | `NetUP_Android_IP_STB` -- ten rows of one keypad |
+
+A pair is now accepted only when both halves are substantial and together fill
+the frame, because two remotes side by side and one remote split down the
+middle are identical by count.
+
+**Three ways buttons went missing on a correct crop.**
+
+* **No block wider than a large key.** Adaptive thresholding compares a pixel
+  to its block mean, so a block smaller than the feature sees the key's own
+  interior as background. Denon RC-982 returned **zero** buttons on forty
+  obvious keys; at block 0.25 it returns forty.
+* **Closing welded tight rows into bars.** The morphological close repairs a
+  broken outline and bridges neighbouring keys, and which it does depends on
+  the remote. JVC RM-SRSWP1J: 36 buttons without it, **zero** with it, at every
+  block and both polarities. Both masks now go into the vote.
+* **`RETR_EXTERNAL` cannot see inside a hole.** A dark bezel around a lighter
+  recessed panel is one region with the panel as a hole, and every key inside
+  it is invisible. `_drop_nested` -- "a detection containing 3+ others is a
+  recessed panel, drop the container, keep the contents" -- could never fire,
+  because the contents were never returned to it. `RETR_CCOMP`, top level only:
+  +13% detections against `RETR_LIST`'s +71%, which counts every ring twice.
+
+**Orientation was decided on a coin toss.** A flip needed confidence >= 0.25.
+The Supra STV-LC1504 flipped at 0.596, its single OCR pass read an inverted crop
+and returned zero text, and the model code printed plainly at the bottom was
+lost. The errors are not symmetric: photographs are taken roughly upright, and
+a wrong flip costs the text as well as the geometry, while leaving an inverted
+crop alone costs only geometry -- which the matcher already retries both ways.
+One threshold, 0.75, now governs acting on the verdict, re-reading both ways,
+and indexing both ways; unequal, they left bands where a query was neither
+flipped nor re-read.
+
+**A record_id is a filename and MySQL was comparing it as text.** `Irbis_0` and
+`irbis_0` collided on a case-insensitive unique index; the second import
+overwrote the first, reported "0 failed", and left the catalogue two rows short.
+Caught only because `resync-catalog.sh` compares the two counts and refuses to
+continue -- a guard written for a drifted index, catching a collation.
+
+**An outage was recorded as a verdict.** The query row is written before the
+service is called, so a failure left `confidence: none` and NULL everywhere
+else: indistinguishable from a remote the catalogue does not hold. Plan 10.1
+makes acceptance rate over that table the main health metric, and an outage
+moves it the same way a real regression does.
+
+### Measured and rejected
+
+* **An edge-derived pass.** Auto-Canny at two sensitivities, closed into
+  regions, same filters and vote: 895 -> 910 detections over 23 records, and
+  **-1** on `KGH-14`, the record that motivated it. On a correct crop the
+  16-pass ensemble finds 51 buttons where Canny finds 54-70 -- the same
+  information by another route, over-detecting at the margins. Where there is
+  no keycap at all, there is no rim for an edge filter to trace either.
+* **Best-of-two masks per pass**, instead of feeding both to the vote: takes
+  `Huayu_RM-530F` from 7 buttons to 0. "More detections in this pass" is not
+  "more agreement across passes".
+* **Border colour ~= interior colour** as a tight-crop discriminator: fires on
+  28% of bad extractions and 12% of good ones.
+
+### What it cost
+
+Retrieval on the 18-record labelled set: **recall@1 unchanged at 8/8**
+throughout. Separation moved +0.077 -> -0.003, driven by the false-pair
+distribution rising (median 0.231 -> 0.256) as more detections give RANSAC more
+chances to fit two unrelated remotes. On 8 true pairs that figure turns on one
+record either side of a 0.003 gap, so it cannot decide anything; the real
+measurement is the band calibration over a catalogue with confusable
+neighbours, which is now possible for the first time.
+
 ## Carried forward
 
 1. **Low-contrast keycap detection (plan 9.1)** — steps 1 and 2's *tooling* are
