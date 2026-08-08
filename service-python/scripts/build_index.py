@@ -43,6 +43,13 @@ def main() -> int:
     t0 = time.time()
     index = TokenIndex.build(records, verbose=True)
     index.save(args.out)
+
+    # The model-code map, beside the index. It is the one thing the service
+    # needs from every fingerprint, and writing it here means the store can
+    # start without opening 12k files -- see JsonDirStore.
+    codes_path = Path(args.out).with_name("codes.json")
+    n_codes = JsonDirStore.write_code_map(args.fp, codes_path)
+    print(f"  {n_codes} model code(s) -> {codes_path}")
     dt = time.time() - t0
 
     ambiguous = sum(1 for _, fp in records if _orientation_ambiguous(fp))

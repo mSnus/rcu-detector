@@ -67,7 +67,8 @@ def _fp_dir() -> Path:
 def load_index() -> None:
     """(Re)load the index and fingerprint store into module state."""
     try:
-        store = JsonDirStore(_fp_dir())
+        store = JsonDirStore(_fp_dir(),
+                             codes_path=_index_path().with_name("codes.json"))
         index = TokenIndex.load(_index_path())
         STATE.matcher = Matcher(index, store)
         STATE.ready = True
