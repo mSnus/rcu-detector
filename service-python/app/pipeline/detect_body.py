@@ -209,8 +209,20 @@ def _bodies_from_mask(img: np.ndarray, mask: np.ndarray) -> list[dict]:
         # The probe is cheap and only fires on a genuinely deep valley.
         parts = _split_merged(mask, rect, img.shape)
         if parts:
-            if True:
-                for p in parts:
+            # The area floor applies to the pieces too. It was checked on the
+            # blob before splitting and never on what came out, so a split
+            # could emit bodies far below a threshold the same function had
+            # just enforced -- Sherwood TX-757 produced pieces of 0.32%, 1.21%
+            # and 0.94% against a 2% floor, each of which then extracted 120
+            # to 150 phantom buttons.
+            #
+            # It also decided which mask won. Plausibility ranks by body count
+            # first, so the fragmenting Lab mask (4 bodies) beat the Otsu one
+            # (2 bodies) that had actually found both remotes correctly.
+            kept = [p for p in parts
+                    if (p[1][0] * p[1][1]) / img_area >= cfg.min_area_frac]
+            if kept:
+                for p in kept:
                     (pw, ph) = p[1]
                     out.append({
                         "rect": p,
