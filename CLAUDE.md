@@ -6,9 +6,9 @@ Photograph a TV remote control, identify its model from a catalog of
 Read `docs/rcu-identifier-implementation-plan.md` for the full design, and
 `rcu-session-01/SESSION-01.md`, `service-python/SESSION-02.md`,
 `service-python/SESSION-03.md`, `service-python/SESSION-04.md`,
-`service-python/SESSION-05.md`, `service-python/SESSION-06.md` and
-`service-python/SESSION-07.md` for status and known-bad behaviour. Session 07
-is the current one. Session 04 corrects two
+`service-python/SESSION-05.md`, `service-python/SESSION-06.md`,
+`service-python/SESSION-07.md` and `service-python/SESSION-08.md` for status
+and known-bad behaviour. Session 08 is the current one. Session 04 corrects two
 claims session 03 made; session 05 retires the memory constraint that shaped
 sessions 03 and 04, so treat any `--ocr-width 800` advice in those two as
 historical.
@@ -400,7 +400,28 @@ These caused real bugs. Do not reintroduce them.
   pre-fix nid keying still baked into an image built before the fix landed.
   `docker compose build laravel` before believing any number from `exec`.
 
-## Next up (session 7, in progress)
+## Next up (session 8)
+
+The catalogue is **complete and consistent**: 12311 fingerprints, 12311 catalog
+rows, 12515 index docs, both consumers in step. Session 7 rebuilt it end to end
+and fixed nine extraction defects found by reading overlays in the review
+queue; see `service-python/SESSION-07.md`, and `SESSION-08.md` for where the
+remaining errors are.
+
+Bands are calibrated for the first time, on 254 live uploads: recall@1 95%,
+`high` 100% precise over 195 queries, `medium` 78% over 59. `high` moved to
+0.65/0.10. `low` and `none` are still uncalibrated and self-retrieval cannot
+calibrate them -- the answer always exists.
+
+1. **Calibrate `low` and `none`** from real `/try` uploads of remotes that are
+   *not* in the catalogue. `rcu_queries.error` now separates an outage from a
+   verdict, so the data is trustworthy.
+2. **Read the 13 wrong `medium` answers** in `work/bands.csv` -- a population,
+   not an anecdote, and the cheapest lead on what the matcher gets wrong.
+3. **Plan 9.1 step 2** — hand-correct the label queue, then train. The tooling
+   is built and verified; an edge pass was measured and does not substitute.
+
+## Previously (session 7, complete)
 
 Session 7 went after the corpus session 6 could not find: the whole live
 catalogue, extracting on `rcud` since 2026-08-05 01:54 and due around 07:00 on
