@@ -733,9 +733,34 @@ class FuseConfig:
     brand_unknown: float = 0.5
     # aspect agreement falls to zero at this relative difference
     aspect_tolerance: float = 0.35
-    high_score: float = 0.75
-    high_margin: float = 0.15
+    # Calibrated at last, on 254 uploads through the live query path against
+    # the 12311-record catalogue. Sessions 5 and 6 could not do this: 19 clean
+    # records contain no wrong answers, and session 6's corpus turned out to be
+    # three quarters thumbnails, which is why 41 of its queries returned an
+    # identical 0.9250. This run gives 232 distinct scores out of 254, spread
+    # from 0.528 to 1.398 -- a distribution rather than a pile.
+    #
+    #   score  margin   n high   precision   recall of all correct
+    #    0.55    0.00      237      100%           98%
+    #    0.60    0.10      234      100%           97%
+    #    0.65    0.10      231      100%           96%   <- chosen
+    #    0.75    0.15      195      100%           81%   <- previous
+    #
+    # 0.65/0.10 buys 36 more high-confidence answers at unchanged precision.
+    # Not 0.55, which the data nominally allows: every query in this run is a
+    # catalogue photograph matched against itself, and a phone photograph is
+    # harder. The margin left is for that difference, not for the measurement.
+    high_score: float = 0.65
+    high_margin: float = 0.10
+    # `medium` measured 78% precise over 59 queries -- worth showing, not worth
+    # asserting. Unchanged for want of evidence to move it.
     medium_score: float = 0.50
+    # `low` and `none` remain uncalibrated and this run could not calibrate
+    # them: it queries the catalogue with its own photographs, so the right
+    # answer always exists. All 13 wrong answers scored above 0.50, and no
+    # floor between 0.10 and 0.50 rejected a single one. Calibrating these
+    # needs queries for remotes that are genuinely absent -- a real /try upload
+    # of a Supra STV-LC1504, not in the catalogue, scored 0.42.
     low_score: float = 0.30
 
 
