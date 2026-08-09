@@ -477,6 +477,39 @@ record either side of a 0.003 gap, so it cannot decide anything; the real
 measurement is the band calibration over a catalogue with confusable
 neighbours, which is now possible for the first time.
 
+## The bands, calibrated
+
+The thing this session existed for, finally measurable: 254 uploads through the
+live query path against the 12311-record catalogue.
+
+| | |
+|---|---|
+| recall@1 | 241/254 (95%) |
+| top scores | min 0.528, p25 0.828, median 0.913, p75 0.990, max 1.398 |
+| distinct scores | 232 of 254 |
+| `high` | n=195, precision **100%** |
+| `medium` | n=59, precision **78%** |
+| `low`, `none` | n=0 |
+
+The distribution check comes first, because session 6's calibration looked
+perfect and was measuring thumbnails: 41 of its 91 queries returned an
+identical 0.9250. 232 distinct values out of 254 is what a real one looks like.
+
+`high` was too conservative. At 0.75/0.15 it captured 81% of the correct
+answers; at 0.65/0.10 it captures 96% with precision still 100%, so the band
+now sits there. Not at 0.55, which the sweep nominally allows -- every query
+here is a catalogue photograph matched against itself, and a phone photograph
+is harder. The margin is for that gap, not for the measurement.
+
+**`low` and `none` are still uncalibrated, and this run could not calibrate
+them.** Querying the catalogue with its own photographs means the right answer
+always exists, so nothing lands below `medium`: all 13 wrong answers scored
+above 0.50 and no floor from 0.10 to 0.50 rejected one. The band that tells a
+user "this remote is not in the catalogue" needs queries for remotes that are
+genuinely absent. One exists already -- a `/try` upload of a Supra STV-LC1504,
+not in the catalogue, scored 0.42 -- and now that failures are recorded as
+failures rather than as `confidence: none`, real uploads can supply the rest.
+
 ## Carried forward
 
 1. **Low-contrast keycap detection (plan 9.1)** — steps 1 and 2's *tooling* are
@@ -485,9 +518,9 @@ neighbours, which is now possible for the first time.
    still the only thing that moves `MR-18B_0_1` off 4 buttons and separation
    off +0.077. Draw the queue from the `rcud` catalogue, not from the 21-record
    dev sample.
-2. **Calibrate the bands**, now that a catalogue with confusable neighbours is
-   nearly extracted. `./docker/resync-catalog.sh --calibrate` is the whole of
-   it; the corpus arrives tomorrow morning.
+2. **Calibrate `low` and `none`.** `high` and `medium` are done (above); these
+   two need queries whose answer is *not* in the catalogue, which
+   self-retrieval structurally cannot provide.
 3. Button drift between query and catalog: unchanged since session 5, measured
    as not costing recall.
 4. `work/fp.bak-preflip` is kept deliberately (it documents the CLAHE rotation
