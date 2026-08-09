@@ -123,14 +123,25 @@ def _model_code_bonus(q_code: str | None, c_code: str | None) -> float:
 def _band(candidates: list[Candidate]) -> tuple[str, str | None]:
     """Confidence band and the UI hint that goes with it.
 
-    These thresholds are the plan's starting numbers and have not been
-    calibrated against a real test set. Treat them as provisional.
+    Calibrated in session 7 on 254 uploads through the live query path against
+    the 12311-record catalogue: `high` 100% precise over 195 queries, `medium`
+    78% over 59, and every one of the 13 wrong answers a tie. `low` and `none`
+    are still uncalibrated, because a run that queries the catalogue with its
+    own photographs has a right answer for every query.
     """
     cfg = CFG.fuse
     if not candidates:
         return "none", "reshoot"
     top = candidates[0].score
     margin = top - (candidates[1].score if len(candidates) > 1 else 0.0)
+
+    # A tie first, before any score threshold. Two records the verifier cannot
+    # separate is a different thing from one weak record, and presenting the
+    # arbitrary winner as the answer is how a coin toss reads as a verdict.
+    # See `tie_margin`: this is what every wrong answer in the calibration
+    # looked like.
+    if len(candidates) > 1 and margin <= cfg.tie_margin and top > cfg.low_score:
+        return "low", "tied"
 
     if top > cfg.high_score and margin > cfg.high_margin:
         return "high", None

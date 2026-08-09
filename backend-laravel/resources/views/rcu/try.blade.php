@@ -497,6 +497,11 @@ const HINTS = {
         + 'printed code — usually on the back, sometimes below the buttons.',
     reshoot: 'Try another photo: fill the frame with the remote, straight on, '
         + 'in even light and without a strong shadow beside it.',
+    // Not a weak answer -- two answers. Every wrong result in the calibration
+    // looked like this, and about a quarter of ties are the same remote listed
+    // twice, which the grouping above already merges into one card.
+    tied: 'Two records match equally well. Compare them below — they may be '
+        + 'the same remote listed twice, or two that look alike.',
 };
 
 function hintText(h) {

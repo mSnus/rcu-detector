@@ -762,6 +762,24 @@ class FuseConfig:
     # needs queries for remotes that are genuinely absent -- a real /try upload
     # of a Supra STV-LC1504, not in the catalogue, scored 0.42.
     low_score: float = 0.30
+    # A tie in the top two scores is not a weak answer, it is two answers. Over
+    # the 254-query calibration every single wrong answer was one: 13 of 13 had
+    # a margin at or below 0.003, against a median margin of 0.321 for correct
+    # ones. Demoting ties catches all 13 and costs 4 correct answers, leaving
+    # 100% precision over the remaining 237.
+    #
+    # The ties are not all matcher failures, which is why they must not be
+    # thrown away. `RS41C0` tied with `RS41C0_1` -- the same product, the same
+    # model_id, photographed twice. `olto_Y-72C3` and `19SECAP-org` tied with
+    # their own model code listed under a second television brand. Those are
+    # right answers scored wrong. Others are genuinely different remotes that
+    # look alike: RC4331E against RC4312, two IRC replacements, two portable
+    # speaker remotes with six buttons each.
+    #
+    # Both cases want the same treatment: say there are two and show them.
+    # /try already groups candidates by model code, so a tie between two
+    # listings of one remote renders as a single group and answers itself.
+    tie_margin: float = 0.01
 
 
 @dataclass
