@@ -394,6 +394,29 @@ These caused real bugs. Do not reintroduce them.
   every one of them `1 remote(s) extracted`. Refuse them at extraction and
   count them, with the source dimensions in the reason — the dimensions are
   what identifies the cause.
+- **Which crop of a photo to keep is a question about size, not position.**
+  "Keep only the leftmost body" is the intuitive rule and it is wrong: crop
+  `_0` is the best-quality crop of its photo only **55%** of the time and the
+  largest only **43%**, and over 12311 records the rule costs **816** records
+  to remove **28** bad ones, because 620 of the later crops are full-size
+  bodies — usually a second colour variant in the same shot. What does
+  discriminate is button count *relative to the same photograph*
+  (`sibling_min_button_ratio`, `sibling_min_buttons`), and it needs both a
+  relative and an absolute test: relative alone deletes real sparse faces
+  (`ClickPdu_Air_Mouse_G30S` has 4 buttons and means it), absolute alone
+  deletes every small remote. The most-buttoned crop cannot fail its own ratio
+  test, so no photograph can ever be left with no crop.
+- Every crop of one photograph is the **same catalogue product**, because
+  metadata joins on the photo stem. `HTR-U29A_0` and `_1` both carried
+  `model_id 12257`. A second crop can never be labelled differently, so it is a
+  duplicate at best and a mislabelled remote at worst — never a way to cover
+  more products.
+- **Compose injects environment at container-create time.** Editing `.env` on
+  the host and reloading the page changes nothing: `RCU_TRY_SIMPLE=false` sat
+  in `.env` while `printenv` in the container still said `true`, and the
+  feedback buttons stayed hidden. `docker compose up -d <service>` recreates
+  it; `restart` does not. Check `docker compose exec <svc> printenv` before
+  believing a flag took. Same family as the next one.
 - **`docker compose exec` runs the image, not the checkout.** A measurement
   taken against a stale container is a measurement of old code: the first run
   of the legacy import here reported 165 of 165 unmatched, which was the
