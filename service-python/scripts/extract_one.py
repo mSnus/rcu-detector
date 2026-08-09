@@ -86,6 +86,14 @@ def process_image(path: Path, out_dir: Path, ensemble: bool = True,
         print(f"\n{path.name}  {img.shape[1]}x{img.shape[0]}  "
               f"-> {len(remotes)} bod{'y' if len(remotes)==1 else 'ies'}")
 
+    # A sparse crop beside a dense sibling is scenery, not a second remote.
+    # Computed over the whole photograph before the loop, because the test is
+    # relative and a single crop has nothing to be relative to -- a one-crop
+    # photo is never touched however few buttons it has. The most-buttoned crop
+    # cannot fail its own ratio test, so this can never empty a photograph.
+    max_buttons = max((len(r.buttons) for r in remotes), default=0)
+    bcfg = CFG.body
+
     results = []
     for r in remotes:
         fp, orient = r.fingerprint, r.orientation
@@ -107,6 +115,22 @@ def process_image(path: Path, out_dir: Path, ensemble: bool = True,
         # for exactly that case -- it is the tell.
         if not r.buttons and not r.regions:
             reason = f"no features ({img.shape[1]}x{img.shape[0]} source)"
+            if verbose:
+                print(f"  [{r.index}] dropped: {reason}")
+            results.append({"stem": stem, "fingerprint": None,
+                            "dropped": reason})
+            continue
+
+        # Counted, not silently skipped: a catalogue that loses records without
+        # saying so is how the 56 unkeyable legacy fingerprints went unnoticed.
+        # The sibling count goes in the reason because it is what makes the
+        # verdict reviewable -- 3 buttons is unremarkable on its own and
+        # damning beside 19.
+        if (len(remotes) > 1
+                and len(r.buttons) < bcfg.sibling_min_button_ratio * max_buttons
+                and len(r.buttons) < bcfg.sibling_min_buttons):
+            reason = (f"sparse beside sibling ({len(r.buttons)} buttons "
+                      f"vs {max_buttons} on the same photo)")
             if verbose:
                 print(f"  [{r.index}] dropped: {reason}")
             results.append({"stem": stem, "fingerprint": None,

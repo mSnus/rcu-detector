@@ -128,6 +128,27 @@ class BodyConfig:
     # is two pieces of one remote.
     pair_min_each_area_frac: float = 0.15
 
+    # A crop of a multi-crop photograph that holds almost no buttons next to a
+    # sibling that holds many is a piece of the scene, not a second remote:
+    # `HTR-U29A_1` is a 0.195-area strip with 3 buttons beside a 19-button
+    # remote. Both tests are needed. Relative alone deletes real sparse faces
+    # (`ClickPdu_Air_Mouse_G30S` has 4 buttons and means it); absolute alone
+    # deletes every genuinely small remote in the catalogue.
+    #
+    # Measured over the 12311-record catalogue: 28 records dropped, 183
+    # buttons, and **no photograph left without a crop** -- the most-buttoned
+    # crop can never fail its own test, so every photo keeps at least one
+    # record and product coverage is arithmetically unchanged.
+    #
+    # Deliberately not "keep only the leftmost body". That was measured too and
+    # costs 816 records to remove these 28, because 620 of the later crops are
+    # full-size bodies (area >= 0.10) -- real remotes, usually a second colour
+    # variant in the same shot. Crop `_0` is the best-quality crop of its photo
+    # only 55% of the time and the largest only 43%, so position carries almost
+    # no signal about which crop is worth keeping. Size and button count do.
+    sibling_min_button_ratio: float = 0.20
+    sibling_min_buttons: int = 12
+
 
 @dataclass
 class NormalizeConfig:
