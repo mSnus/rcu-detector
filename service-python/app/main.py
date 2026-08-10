@@ -30,7 +30,8 @@ from app.config import CFG
 from app.matching.index import TokenIndex
 from app.matching.matcher import Matcher
 from app.matching.store import JsonDirStore
-from app.pipeline.extract import ExtractedRemote, debug_panel, extract_remotes
+from app.pipeline.extract import (ExtractedRemote, debug_panel, extract_remotes,
+                                 implausibly_dense)
 from app.pipeline.imageio import decode_image
 from app.pipeline.ocr import available_engines
 
@@ -261,7 +262,17 @@ async def identify(image: UploadFile = File(...), top_k: int = 5,
         remotes = await asyncio.to_thread(
             extract_remotes, img, ensemble=True, fast_ocr=True)
         if remotes:
-            remote = max(remotes,
+            # Most buttons wins -- but only among bodies whose buttons its own
+            # pixels could resolve. Photograph a remote lying on its
+            # instruction manual and the page extracts more keycaps than the
+            # remote does (112 against 61 on catalogue photo `2750`), so
+            # ranking on the raw count hands the query to the leaflet. Never
+            # empties the list: if every body is implausible we still answer on
+            # the best of them rather than claiming no remote was found.
+            dense = implausibly_dense(remotes, img.shape[:2])
+            plausible = [r for r in remotes
+                         if r.index not in dense] or remotes
+            remote = max(plausible,
                          key=lambda r: r.fingerprint["stats"]["n_buttons"])
             result = await asyncio.to_thread(
                 STATE.matcher.match, remote.fingerprint, top_k)

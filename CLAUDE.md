@@ -406,6 +406,23 @@ These caused real bugs. Do not reintroduce them.
   (`ClickPdu_Air_Mouse_G30S` has 4 buttons and means it), absolute alone
   deletes every small remote. The most-buttoned crop cannot fail its own ratio
   test, so no photograph can ever be left with no crop.
+- A crop can be junk by having **too many** buttons, not too few. A remote
+  photographed beside its instruction manual (`2750`) yields crops of the
+  printed page holding 50, 92 and 112 "buttons" against the real remote's 61,
+  traced out of halftone and a printed diagram. Rectification is the cause
+  again: every body is upscaled to `normalize.out_width` whatever its source
+  size. `min_source_long_side` does not catch it, because that guard measures
+  the *photograph* and a 0.046-area body inside a photograph that clears it
+  walks past. What separates the populations is **buttons per 1000 source
+  pixels** (`max_button_density`): over 12218 records the middle 80% sit
+  between 0.11 and 0.44, the leaflet crops at 2.2-7.8, the worst record at 36.
+  Above 3.0 a button occupies under 330 source pixels, which is a resolution
+  statement rather than a threshold. In the band below it the siblings decide
+  (`sibling_max_density_ratio`), but only above `sibling_density_floor` —
+  judged on the ratio alone the rule fires on good crops whose sibling merely
+  has fewer buttons, costing 31 records with label recall above 0.20 instead
+  of 1. Unlike the sparse test this one **can** empty a photograph, and on 8 of
+  11473 it does; every one is a blister-card fragment or an LCD panel.
 - Every crop of one photograph is the **same catalogue product**, because
   metadata joins on the photo stem. `HTR-U29A_0` and `_1` both carried
   `model_id 12257`. A second crop can never be labelled differently, so it is a

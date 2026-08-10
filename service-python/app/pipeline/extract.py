@@ -147,6 +147,52 @@ def extract_remotes(img: np.ndarray, ensemble: bool = True,
     return out
 
 
+def button_density(remote: ExtractedRemote, src_shape) -> float:
+    """Buttons per 1000 pixels of the body *as photographed*.
+
+    Not per pixel of the crop: the crop is `CFG.normalize.out_width` wide
+    whatever it was cut from, which is exactly why a photographed instruction
+    leaflet extracts a hundred confident keycaps out of halftone. See
+    `CFG.body.max_button_density`.
+    """
+    px = (remote.fingerprint["body"]["area_frac"]
+          * float(src_shape[0] * src_shape[1]))
+    return len(remote.buttons) / (px / 1000.0) if px > 0 else 0.0
+
+
+def implausibly_dense(remotes: list[ExtractedRemote], src_shape) -> set[int]:
+    """Indices of bodies holding more buttons than their pixels can resolve.
+
+    Takes the whole photograph, not one body, because half the verdict is
+    relative: see `CFG.body.max_button_density` for the ceiling and
+    `sibling_max_density_ratio` for what settles the band beneath it.
+
+    One definition, called from the build (`scripts/extract_one.py`) and from
+    the query path (`app/main.py`). The two take different routes through
+    extraction and a rule enforced at one end only is not enforced -- and on
+    `2750` the ceiling alone is not enough on either side: two of the three
+    leaflet crops sit under it and are caught only by their siblings.
+    """
+    cfg = CFG.body
+    dens = {r.index: button_density(r, src_shape) for r in remotes}
+    # Over the bodies that have buttons at all: one with none has density 0 and
+    # would otherwise become the reference every other body is three times
+    # denser than, turning one blank crop into a verdict on the photograph.
+    floor = min((d for d in dens.values() if d > 0), default=0.0)
+
+    out = set()
+    for r in remotes:
+        d = dens[r.index]
+        if d > cfg.max_button_density:
+            out.add(r.index)
+        elif (len(remotes) > 1
+                and d > cfg.sibling_density_floor
+                and floor > 0
+                and d > cfg.sibling_max_density_ratio * floor):
+            out.add(r.index)
+    return out
+
+
 def debug_panel(img: np.ndarray, remote: ExtractedRemote,
                 use_ocr: bool = True) -> np.ndarray:
     """The side-by-side overlay.

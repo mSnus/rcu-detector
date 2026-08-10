@@ -64,6 +64,43 @@ both consumers resynced and in step. `Sherwood_TX-757` now yields exactly the
 two real remotes and self-retrieves at 0.9168 against a next-best 0.4135;
 `HTR-U29A` at 0.9235 against 0.6466.
 
+## Photographs that contain something other than a remote (done)
+
+`2750` is a remote lying beside its instruction manual. Four crops: the remote
+at area 0.538 with 61 buttons, and three crops of the printed page with 50, 92
+and 112. The page has no keycaps on it at all — what `detect_buttons` traced is
+halftone, body text and a printed diagram of the remote, blown up because
+rectification upscales any body to 400px whatever it was cut from.
+
+The measured population, over the 12218-record catalogue:
+
+    crops per photo   1: 10892   2: 486   3: 53   4: 23   5: 12   6: 6   7: 1
+
+Every photograph with 3+ crops is a photograph the detector already knew was
+implausible: `max_plausible_bodies` is 2, and past it `detect_bodies_with_mask`
+asks `_full_frame_body` to replace the lot. When the frame is not
+remote-shaped — a leaflet beside a remote makes a squarish frame — the fallback
+declines and **all the bodies are kept anyway**. 95 photographs, 354 records.
+
+Position and count both fail here. `_0` is as often the leaflet as the remote,
+and the junk crops have *more* buttons than the real one, so the
+sparse-beside-sibling rule shipped earlier this session cannot see them; it was
+in fact being harmed by them, since a page traced as 112 keycaps was setting
+`max_buttons` for the whole photograph.
+
+What separates them is **buttons per 1000 source pixels**:
+
+    catalogue p10 0.11   p50 0.22   p90 0.44        real remotes
+    2750         _0 0.37 | _1 2.2  _2 2.3  _3 7.8   remote, then the leaflet
+    worst record 36.09 (703_1, 230 buttons in a blister-card fragment)
+
+Shipped as an absolute ceiling of 3.0 plus a sibling ratio of 3x above a floor
+of 1.0 (gotcha in CLAUDE.md; the floor is what keeps it off good crops whose
+sibling merely has fewer buttons). 145 records go, mean quality 0.66 and mean
+label recall 0.03, only one with label recall above 0.20. Eight photographs are
+left with no crop and should be: seven blister-card fragments and a Panasonic
+aircon remote whose only detected body is its LCD panel.
+
 ## The 13 wrong `medium` answers: mostly not wrong
 
 Item 2 below is answered. Reading them, 10 of the 13 are the same remote
