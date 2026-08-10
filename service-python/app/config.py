@@ -149,6 +149,39 @@ class BodyConfig:
     sibling_min_button_ratio: float = 0.20
     sibling_min_buttons: int = 12
 
+    # Buttons per 1000 source pixels of the body -- the other half of the same
+    # question, and the one the sparse test cannot ask. Where a fragment beside
+    # a real remote has *too few* buttons, a photographed instruction leaflet
+    # has far too many: `2750` is a remote lying next to its manual, and the
+    # three crops of the printed page yielded 50, 92 and 112 buttons against
+    # the real remote's 61. Rectification is what makes this possible -- every
+    # body is upscaled to `CFG.normalize.out_width` however small it was, so
+    # `detect_buttons` traces the halftone and the printed diagram as keycaps.
+    #
+    # This is `min_source_long_side` arriving through a crop instead of through
+    # a whole image. That guard measures the photograph; a 0.046-area body
+    # inside a photograph that clears it walks straight past.
+    #
+    # Measured over the 12218-record catalogue: the middle 80% of records sit
+    # between 0.11 and 0.44 buttons per 1000 px. 3.0 is seven times the 90th
+    # percentile, so it is a statement about resolution rather than a tuning
+    # knob -- above it a "button" occupies under 330 source pixels, an 18x18
+    # square, which is smaller than a button is ever photographed.
+    max_button_density: float = 3.0
+
+    # Between the 90th percentile and that ceiling the absolute test cannot
+    # separate a leaflet from a genuinely small remote, so within a photograph
+    # the siblings settle it: the real remote sets the scale. On `2750` it is
+    # 0.37 and the three leaflet crops are 2.2, 2.3 and 7.8.
+    #
+    # The floor is load-bearing, not a safety margin. Judged on the ratio
+    # alone the rule fires on good crops whose sibling is merely emptier --
+    # `Huayu_RM-L1729_Samsung_TV_12_0`, 18 buttons at quality 0.95 and density
+    # 0.09, dropped for being three times a sibling that had almost none. That
+    # cost 31 records with label recall above 0.20; with the floor it costs 1.
+    sibling_density_floor: float = 1.0
+    sibling_max_density_ratio: float = 3.0
+
 
 @dataclass
 class NormalizeConfig:

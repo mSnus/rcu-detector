@@ -86,13 +86,49 @@ def process_image(path: Path, out_dir: Path, ensemble: bool = True,
         print(f"\n{path.name}  {img.shape[1]}x{img.shape[0]}  "
               f"-> {len(remotes)} bod{'y' if len(remotes)==1 else 'ies'}")
 
+    bcfg = CFG.body
+    src_px = float(h * w)
+
+    def body_px(rec) -> float:
+        return rec.fingerprint["body"]["area_frac"] * src_px
+
+    def density(rec) -> float:
+        """Buttons per 1000 pixels of the body *as photographed*."""
+        px = body_px(rec)
+        return len(rec.buttons) / (px / 1000.0) if px > 0 else 0.0
+
+    # Density is scale-free, so the absolute ceiling is meaningful on its own;
+    # the sibling ratio only refines the band where it cannot decide. Both are
+    # measured on the source rather than the rectified crop, because the crop
+    # is 400px wide whatever it was cut from -- which is the whole reason a
+    # printed leaflet can extract 112 confident keycaps.
+    dens = {r.index: density(r) for r in remotes}
+    # Over the crops that have buttons at all: a body with none has density 0
+    # and would otherwise become the reference every other crop is three times
+    # denser than, which turns one blank crop into a verdict on the photograph.
+    min_dens = min((d for d in dens.values() if d > 0), default=0.0)
+
+    def too_dense(rec) -> bool:
+        d = dens[rec.index]
+        if d > bcfg.max_button_density:
+            return True
+        return (len(remotes) > 1
+                and d > bcfg.sibling_density_floor
+                and min_dens > 0
+                and d > bcfg.sibling_max_density_ratio * min_dens)
+
     # A sparse crop beside a dense sibling is scenery, not a second remote.
     # Computed over the whole photograph before the loop, because the test is
     # relative and a single crop has nothing to be relative to -- a one-crop
     # photo is never touched however few buttons it has. The most-buttoned crop
     # cannot fail its own ratio test, so this can never empty a photograph.
-    max_buttons = max((len(r.buttons) for r in remotes), default=0)
-    bcfg = CFG.body
+    #
+    # Over the crops that survive the density test, deliberately: on `2750` the
+    # most-buttoned crop is the instruction leaflet at 112, and letting a
+    # traced page set the bar for "sparse" makes this test three times harsher
+    # on every real remote in the photograph.
+    max_buttons = max((len(r.buttons) for r in remotes if not too_dense(r)),
+                      default=0)
 
     results = []
     for r in remotes:
@@ -131,6 +167,25 @@ def process_image(path: Path, out_dir: Path, ensemble: bool = True,
                 and len(r.buttons) < bcfg.sibling_min_buttons):
             reason = (f"sparse beside sibling ({len(r.buttons)} buttons "
                       f"vs {max_buttons} on the same photo)")
+            if verbose:
+                print(f"  [{r.index}] dropped: {reason}")
+            results.append({"stem": stem, "fingerprint": None,
+                            "dropped": reason})
+            continue
+
+        # Unlike the sparse test above, this one *can* empty a photograph, and
+        # on 8 of 11473 it does. Those eight are a Panasonic aircon remote
+        # whose only detected body is its LCD panel and seven blister-card
+        # fragments -- photographs where segmentation found nothing that was a
+        # remote, and the honest record is no record. The reason carries the
+        # numbers so the skipped list stays reviewable.
+        if too_dense(r):
+            reason = (f"button density {dens[r.index]:.1f}/kpx "
+                      f"({len(r.buttons)} buttons in {body_px(r):.0f} "
+                      f"source px")
+            if len(remotes) > 1:
+                reason += f", sparsest crop on this photo {min_dens:.1f}/kpx"
+            reason += ")"
             if verbose:
                 print(f"  [{r.index}] dropped: {reason}")
             results.append({"stem": stem, "fingerprint": None,
