@@ -6,6 +6,7 @@ confidence bands measured against it.
 
     12311 fingerprints = 12311 catalog rows      in step
     12515 index docs
+    (12079 / 12079 / 12211 after this session's two crop-selection fixes)
     recall@1 241/254 (95%) over live uploads
     high   n=195  precision 100%
     medium n= 59  precision  78%
@@ -96,10 +97,33 @@ What separates them is **buttons per 1000 source pixels**:
 
 Shipped as an absolute ceiling of 3.0 plus a sibling ratio of 3x above a floor
 of 1.0 (gotcha in CLAUDE.md; the floor is what keeps it off good crops whose
-sibling merely has fewer buttons). 145 records go, mean quality 0.66 and mean
-label recall 0.03, only one with label recall above 0.20. Eight photographs are
-left with no crop and should be: seven blister-card fragments and a Panasonic
-aircon remote whose only detected body is its LCD panel.
+sibling merely has fewer buttons). One definition in
+`pipeline/extract.implausibly_dense`, called from the build *and* from
+`/identify` — which had been picking the body with the most buttons while its
+comment claimed the largest, so on this photograph the query was answered from
+the leaflet. The ceiling alone would not have sufficed on either side: two of
+the three leaflet crops sit under it at 2.3 and 2.2 and are caught only by
+their siblings.
+
+Deployed: 133 photographs re-extracted, **146 records refused**, catalogue
+12218 -> 12079, 12211 index docs, both consumers resynced and in step. Seven
+photographs are now left with no crop and should be: six blister-card
+fragments and a Panasonic aircon remote whose only detected body was its LCD
+panel. Across the catalogue, `n_buttons` p99 fell 92 -> 85 and the maximum
+230 -> 156; photographs with 3+ crops fell 95 -> 49. `2750` yields one record
+and self-retrieves at 0.9118 against a next-best 0.6070.
+
+**Residual, 4 records.** Density cannot see a printed card that occupies a
+*large* share of the frame, because area and button count rise together:
+
+    812_0    140 buttons, area 0.27, label recall 0.04   vs 812_3    52 @ 0.36
+    2151_0   105 buttons, area 0.45, label recall 0.01   vs 2151_2   48 @ 0.27
+    703_2    102 buttons, area 0.34, label recall 0.02   vs 703_4    13 @ 0.08
+
+The signature is a big crop with roughly double a sibling's buttons and no
+labels read at all beside a sibling that reads plenty. Four records is not a
+population worth a rule, and the obvious discriminator is label recall, which
+is exactly the thing this project has agreed never to require.
 
 ## The 13 wrong `medium` answers: mostly not wrong
 

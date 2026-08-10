@@ -442,8 +442,10 @@ These caused real bugs. Do not reintroduce them.
 
 ## Next up (session 8)
 
-The catalogue is **complete and consistent**: 12311 fingerprints, 12311 catalog
-rows, 12515 index docs, both consumers in step. Session 7 rebuilt it end to end
+The catalogue is **complete and consistent**: 12079 fingerprints, 12079 catalog
+rows, 12211 index docs, both consumers in step. (Session 7 left 12311/12515;
+session 8 removed 232 records that were crops of scenery — see SESSION-08.md.)
+Session 7 rebuilt it end to end
 and fixed nine extraction defects found by reading overlays in the review
 queue; see `service-python/SESSION-07.md`, and `SESSION-08.md` for where the
 remaining errors are.
