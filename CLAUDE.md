@@ -84,7 +84,7 @@ RCU_INTERNAL_TOKEN=... RCU_INDEX_PATH=../work/index/tokens.npz \
 # tell the running service to reload its index
 cd backend-laravel
 php artisan rcu:import-catalog --prune --reindex
-php artisan test                        # 87; 5 need the service running
+php artisan test                        # 96; 5 need the service running
 
 # after any extraction: resync both consumers and check they agree (host, not
 # a container). --calibrate then sweeps the bands over a sample of real uploads.
@@ -423,6 +423,17 @@ These caused real bugs. Do not reintroduce them.
   has fewer buttons, costing 31 records with label recall above 0.20 instead
   of 1. Unlike the sparse test this one **can** empty a photograph, and on 8 of
   11473 it does; every one is a blister-card fragment or an LCD panel.
+- One remote is routinely listed as **many products**, one per TV brand whose
+  code set it carries, all pointing at the same file. 13763 catalogued
+  photographs are **13174 distinct images**: 253 groups, 842 photographs, 589
+  redundant. `rcu:legacy-manifest` extracts the alphabetically first of each
+  group and reports the rest — alphabetical *because* the members are
+  byte-identical, so there is no better member to prefer, only a stable one,
+  and the canonical must be stable or the record silently re-points at another
+  product. The fixture trap that comes with this: `LegacyManifestTest::onDisk`
+  wrote `'x'` to every file, so every photograph in every test was a duplicate
+  of every other. A fixture that does not vary the bytes turns every test in
+  the file into a test of the dedupe.
 - **Identical photographs in the catalogue are not necessarily a defect.**
   123 `IRC_new_237*` records carry 123 distinct `model_id`s and 120
   byte-identical files (md5 `03c9b990…`, 75150 bytes). That is correct data,

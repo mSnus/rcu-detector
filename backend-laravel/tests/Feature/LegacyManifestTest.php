@@ -78,11 +78,26 @@ class LegacyManifestTest extends TestCase
         }
     }
 
+    /**
+     * Distinct content per file, deliberately: the manifest collapses
+     * byte-identical photographs, so a fixture that wrote the same bytes
+     * everywhere would leave every one of these tests measuring the dedupe
+     * instead of what it names. Use onDiskIdentical() to test that.
+     */
     private function onDisk(string ...$names): void
     {
         foreach ($names as $name) {
             File::ensureDirectoryExists(dirname($this->filesDir . '/' . $name));
-            File::put($this->filesDir . '/' . $name, 'x');
+            File::put($this->filesDir . '/' . $name, 'pixels of ' . $name);
+        }
+    }
+
+    /** Several photographs that are the same file, as a real catalogue has. */
+    private function onDiskIdentical(string ...$names): void
+    {
+        foreach ($names as $name) {
+            File::ensureDirectoryExists(dirname($this->filesDir . '/' . $name));
+            File::put($this->filesDir . '/' . $name, 'one remote, many listings');
         }
     }
 
@@ -110,6 +125,46 @@ class LegacyManifestTest extends TestCase
             ->assertSuccessful();
 
         $this->assertSame(['6710V00125A.jpg'], $this->manifest());
+    }
+
+    /**
+     * One physical remote listed as many products -- one per TV brand whose
+     * codes it carries -- is correct catalogue data. Extracting all of them
+     * would put N identical fingerprints in the index and turn a query against
+     * that remote into an N-way tie no detector work could break.
+     */
+    public function test_byte_identical_photographs_are_extracted_once(): void
+    {
+        $this->product(1, 'IRC-05F [LG]', [0 => [1, 'a.jpg', 'files/IRC_c.jpg']]);
+        $this->product(2, 'IRC-0904C [MITSUBISHI]', [0 => [2, 'b.jpg', 'files/IRC_a.jpg']]);
+        $this->product(3, 'IRC-0717D [HITACHI]', [0 => [3, 'c.jpg', 'files/IRC_b.jpg']]);
+        $this->product(4, 'A different remote', [0 => [4, 'd.jpg', 'files/other.jpg']]);
+
+        $this->onDiskIdentical('IRC_a.jpg', 'IRC_b.jpg', 'IRC_c.jpg');
+        $this->onDisk('other.jpg');
+
+        $this->artisan("rcu:legacy-manifest --out={$this->out}")
+            ->expectsOutputToContain('2 photograph(s) in 1 group(s)')
+            ->assertSuccessful();
+
+        // The alphabetically first survives, and the rule is alphabetical
+        // precisely because the members are byte-identical: there is no
+        // better member to prefer, only a stable one.
+        $this->assertSame(['IRC_a.jpg', 'other.jpg'], $this->manifest());
+    }
+
+    /** A catalogue of genuinely distinct photographs loses nothing. */
+    public function test_distinct_photographs_are_all_kept(): void
+    {
+        $this->product(1, 'One', [0 => [1, 'a.jpg', 'files/a.jpg']]);
+        $this->product(2, 'Two', [0 => [2, 'b.jpg', 'files/b.jpg']]);
+        $this->onDisk('a.jpg', 'b.jpg');
+
+        $this->artisan("rcu:legacy-manifest --out={$this->out}")
+            ->expectsOutputToContain('no two catalogued photographs are byte-identical')
+            ->assertSuccessful();
+
+        $this->assertSame(['a.jpg', 'b.jpg'], $this->manifest());
     }
 
     /**

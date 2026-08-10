@@ -54,4 +54,70 @@ class LegacyCatalog
                 'basename' => basename((string) $r->filepath),
             ]);
     }
+
+    /**
+     * Collapse photographs whose file contents are byte-identical.
+     *
+     * One physical remote is routinely listed as many products, one per TV
+     * brand whose code set it carries, and every listing points at the same
+     * photograph. Measured over the live catalogue: 13763 photographs are
+     * 13174 distinct images, and the redundancy is concentrated --
+     *
+     *     120  one IRC universal, listed under 120 IRC model numbers
+     *      23  AN1603, for Novex / Asano / Centek / Hartens / Accesstyle ...
+     *      20  a second IRC group
+     *      19  Sber SBDV-00001, for Sber / Olto / Prestigio / SUNWIND ...
+     *
+     * That is correct catalogue data, not a defect, and it must not be
+     * "cleaned up" in the database. But extracting all of them puts 120
+     * identical fingerprints in the index, and identical inputs extract
+     * identically -- so a query against that remote is an exact 120-way tie
+     * that no amount of detector work can break, and 119 correct answers are
+     * scored as errors by any measurement keyed on the model.
+     *
+     * The canonical member is the alphabetically first path, and alphabetical
+     * is the right rule *because* the members are byte-identical: there is no
+     * better-quality member to prefer, so the only thing that matters is that
+     * the choice is stable between builds. It has to be -- the record keys to
+     * its photograph's stem, so a canonical that moved would silently
+     * re-point the record at a different product.
+     *
+     * Costs one md5 per photograph, ~820 MB of reads on the live catalogue.
+     * Paid once per build, which is the only time the manifest is produced.
+     *
+     * @param  list<string>  $relPaths  paths relative to $filesDir
+     * @return array{keep: list<string>, duplicates: array<string, string>}
+     *         `duplicates` maps each dropped path to the one kept in its place
+     */
+    public static function canonicalByContent(array $relPaths, string $filesDir): array
+    {
+        $filesDir = rtrim($filesDir, '/');
+        sort($relPaths);
+
+        $canonical = [];
+        $keep = [];
+        $duplicates = [];
+
+        foreach ($relPaths as $rel) {
+            $hash = @md5_file($filesDir . '/' . $rel);
+
+            if ($hash === false) {
+                // Unreadable here is not a duplicate. Keep it and let the
+                // extractor report it as unreadable, which it counts; deciding
+                // that here would hide the failure behind the wrong reason.
+                $keep[] = $rel;
+                continue;
+            }
+
+            if (isset($canonical[$hash])) {
+                $duplicates[$rel] = $canonical[$hash];
+                continue;
+            }
+
+            $canonical[$hash] = $rel;
+            $keep[] = $rel;
+        }
+
+        return ['keep' => $keep, 'duplicates' => $duplicates];
+    }
 }

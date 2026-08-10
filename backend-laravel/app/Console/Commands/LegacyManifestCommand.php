@@ -69,6 +69,19 @@ class LegacyManifestCommand extends Command
             }
 
             $present[] = $path;
+        }
+
+        // One physical remote is listed as many products -- one per TV brand
+        // it replaces -- and every listing points at the same file. Extracting
+        // all of them would put N identical fingerprints in the index and make
+        // the query an N-way tie. See LegacyCatalog::canonicalByContent.
+        $deduped = LegacyCatalog::canonicalByContent($present, $filesDir);
+        $duplicates = $deduped['duplicates'];
+        $present = $deduped['keep'];
+
+        // Counted after the dedupe, not before, or it reports a build that is
+        // not the one about to run.
+        foreach ($present as $path) {
             $dir = dirname($path);
             $foundIn[$dir] = ($foundIn[$dir] ?? 0) + 1;
         }
@@ -100,6 +113,34 @@ class LegacyManifestCommand extends Command
 
         foreach ($foundIn as $dir => $count) {
             $this->report(sprintf('  %6d from %s', $count, $dir === '.' ? $filesDir : $dir));
+        }
+
+        // Always reported, even at zero, and with the largest groups named.
+        // A product whose photograph is not extracted has no fingerprint and
+        // no catalog row, which downstream is indistinguishable from a genuine
+        // catalogue gap -- so the reason has to be stated here, where it is
+        // still known. Same discipline as the excluded-files report below.
+        if ($duplicates !== []) {
+            $groups = [];
+
+            foreach ($duplicates as $dropped => $kept) {
+                $groups[$kept][] = $dropped;
+            }
+
+            uasort($groups, fn ($a, $b) => count($b) <=> count($a));
+
+            $this->report('<comment>' . count($duplicates) . ' photograph(s) in '
+                . count($groups) . ' group(s) are byte-identical to another and '
+                . 'will not be extracted separately;</comment>');
+            $this->report('<comment>  one remote listed as several products is '
+                . 'catalogue data, not a defect -- see LegacyCatalog</comment>');
+
+            foreach (array_slice($groups, 0, 5, true) as $kept => $dropped) {
+                $this->report(sprintf('  %6d duplicate(s) of %s',
+                    count($dropped), $kept));
+            }
+        } else {
+            $this->report('no two catalogued photographs are byte-identical');
         }
 
         if ($missing !== []) {
