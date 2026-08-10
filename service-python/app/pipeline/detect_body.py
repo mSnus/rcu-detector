@@ -345,14 +345,90 @@ def detect_bodies_with_mask(img: np.ndarray) -> tuple[list[dict], np.ndarray]:
                     * (pts[:, 1].max() - pts[:, 1].min()))
             implausible = span / float(img.shape[0] * img.shape[1]) < CFG.body.min_bodies_span_frac
         if not bodies or implausible:
-            whole = _full_frame_body(img)
-            # _full_frame_body applies its own guard: it returns nothing unless
-            # the frame is itself remote-shaped. When it declines, keep what we
-            # had -- a poor body beats no body, and this is exactly the check
-            # that stops a square thumbnail or a banner becoming one.
-            if whole:
-                bodies = whole
+            # A frame too squat to be one remote is usually several of them
+            # side by side, and taking it whole fuses them into a single
+            # fingerprint: `STV-22LED5-org` stored one 104-button "remote"
+            # that was a black and a white SHIVAKI photographed together, and
+            # `RM-L810` the same. `frame_min_elongation` already encodes the
+            # discriminator -- a genuine tight crop of one remote is far more
+            # elongated than a montage of two -- but it only guarded the
+            # contour path, and this fallback walked round it.
+            #
+            # Cut before accepting whole, never instead of it: on 323 of the
+            # 485 squat frames measured there is no valley to cut on, and
+            # those keep exactly today's behaviour. 162 split, 149 in two.
+            pieces = []
+            if _frame_elongation(img) < CFG.body.frame_min_elongation:
+                for cand_mask in (otsu_mask, lab_mask):
+                    cut = _split_frame(img, cand_mask)
+                    # Same order as `plausibility`: more bodies first, then
+                    # more of the frame explained. It is what separates a real
+                    # pair from a sliver shaved off one remote -- on
+                    # `22LE3110-1` one mask cuts 0.36 + 0.46 of the frame and
+                    # the other 0.39 + a 0.21 splinter at aspect 8.6.
+                    if (len(cut), sum(b["area_frac"] for b in cut)) > (
+                            len(pieces), sum(b["area_frac"] for b in pieces)):
+                        pieces, mask = cut, cand_mask
+            if pieces:
+                bodies = pieces
+            else:
+                whole = _full_frame_body(img)
+                # _full_frame_body applies its own guard: it returns nothing
+                # unless the frame is itself remote-shaped. When it declines,
+                # keep what we had -- a poor body beats no body, and this is
+                # exactly the check that stops a square thumbnail or a banner
+                # becoming one.
+                if whole:
+                    bodies = whole
     return bodies, mask
+
+
+def _frame_elongation(img: np.ndarray) -> float:
+    h, w = img.shape[:2]
+    return max(w, h) / min(w, h) if min(w, h) else 0.0
+
+
+def _split_frame(img: np.ndarray, mask: np.ndarray) -> list[dict]:
+    """Cut the whole frame into remote-shaped pieces, or return nothing.
+
+    The last resort before `_full_frame_body`, for the case that fallback
+    cannot express: several remotes photographed side by side against a
+    background their silhouettes do not segment from. What survives in the
+    mask is only the keycaps, so every contour is far below `min_area_frac`
+    and the split probe in `_bodies_from_mask` never runs -- but the keycaps
+    still fall into columns with a clean gap between them, which is exactly
+    what `_split_merged` reads.
+
+    Each piece must clear `pair_min_each_area_frac`, the same bar a genuine
+    pair of bodies has to clear, so a splinter shaved off one remote is not
+    mistaken for a second one.
+    """
+    h, w = img.shape[:2]
+    rect = ((w / 2.0, h / 2.0), (float(w), float(h)), 0.0)
+    parts = _split_merged(mask, rect, img.shape)
+    if not parts:
+        return []
+
+    img_area = float(h * w)
+    out = []
+    for p in parts:
+        (pw, ph) = p[1]
+        area_frac = (pw * ph) / img_area
+        if area_frac < CFG.body.pair_min_each_area_frac:
+            continue
+        out.append({
+            "rect": p,
+            "area_frac": area_frac,
+            "elongation": max(pw, ph) / min(pw, ph),
+            "fill": 1.0,
+            "contour": None,
+            "split": True,
+            "frame_split": True,   # surfaced by the audit as a lower-trust body
+        })
+    # Two or it is not a montage. One surviving piece means the cut found a
+    # remote and a splinter, which is what the full-frame body already says
+    # better.
+    return out if len(out) >= 2 else []
 
 
 def _full_frame_body(img: np.ndarray) -> list[dict]:

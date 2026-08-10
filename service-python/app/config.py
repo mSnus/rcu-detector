@@ -495,6 +495,62 @@ class OcrConfig:
     # Single characters match almost anything at partial_ratio.
     watermark_min_len: int = 2
 
+    # --- the strapline under the wordmark ---------------------------------
+    # PULTOVNET's stamp is two lines: the wordmark, handled above, and the
+    # Russian strapline "эксперты по пультам дистанционного управления"
+    # beneath it. The strapline defeats every test above, and each for its own
+    # reason -- which is why it needs its own rule rather than another term:
+    #
+    #   - it is SMALL text. Median height 0.0145 of the crop against 0.0146
+    #     for all text, i.e. a height ratio of almost exactly 1.0, so
+    #     `watermark_min_height_ratio` -- the test that matters for the
+    #     wordmark -- rejects it every time.
+    #   - it OCRs as Latin lookalikes of Cyrillic, differently on every image:
+    #     "3KCNEPTBINONYNBTAMAMCTAHLAOHHOTOYOPABNE", "SRGTEPIEGRONYNSRU",
+    #     "AHLNOHHOROYNPABNEHMA". There is no stable string to blocklist.
+    #   - it scores nothing against "PULTOVNET".
+    #
+    # It was in 1002 regions on 986 records before this existed, stored as
+    # captions and feeding the index.
+    #
+    # What makes a phrase safe where a word is not: length. The wordmark needs
+    # the height test because EXIT scores 67 against PULTOVNET; nothing 12
+    # characters long is printed on a remote *and* scores 70 against a
+    # 42-character Russian phrase. So the phrase test skips the height gate,
+    # which is the whole point of it, and pays for that with the length floor.
+    #
+    # Calibrated by reading the decision boundary over all 8861 stored regions
+    # of 12+ characters. At 70 the 40 lowest-scoring matches are strapline
+    # without exception (the one near-miss, "МОДЕЛЬ ПУЛЬТА" at y 0.21-0.28, is
+    # page text and not a legend either); by 50 the band holds HARMANKARDON,
+    # ENTERTAINMENTSYSTEM and TAPEPHONOTUNER. 70 removes 1421 regions.
+    #
+    # Both halves are listed as well as the whole, because the stamp is
+    # frequently read as one line or the other rather than entire.
+    # The Cyrillic original is listed too, and matched against a form that
+    # keeps Cyrillic letters rather than the A-Z0-9 one the wordmark uses.
+    # PP-OCR reads this stamp as lookalikes almost every time, but "almost" is
+    # not a thing to build on: the A-Z0-9 normaliser reduces real Cyrillic to
+    # the empty string, so the one reading that comes back correct would be
+    # the one reading that survives.
+    #
+    # `SRGTEPIEGRONYNSRU` is a garbled reading rather than a phrase, and it is
+    # here because it is a *stable* one: 120 records, every one of them the
+    # same IRC remote at y 0.5232 and h 0.0232 to four decimal places, where
+    # the stamp crosses a pale body. A reading that repeats 120 times
+    # identically is a string, not noise.
+    watermark_phrases: tuple = (
+        "3KCNEPTBINONYNBTAMANCTAHUNOHHOTOYNPABNEHNA",
+        "3KCNEPTBINONYNBTAM",
+        "ANCTAHUNOHHOTOYNPABNEHNA",
+        "ЭКСПЕРТЫПОПУЛЬТАМДИСТАНЦИОННОГОУПРАВЛЕНИЯ",
+        "SRGTEPIEGRONYNSRU",
+    )
+    # Override with RCU_WATERMARK_PHRASES=...,... (empty disables just this
+    # test, leaving the wordmark filter alone).
+    watermark_phrase_min_len: int = 12
+    watermark_phrase_min_similarity: int = 70
+
 
 @dataclass
 class LabelConfig:
@@ -947,6 +1003,15 @@ def _apply_env_overrides(cfg: Config) -> None:
         cfg.ocr.watermark_terms = tuple(t for t in cleaned if t)
         if not cfg.ocr.watermark_terms:
             cfg.ocr.watermark_filter = False
+
+    phrases = os.environ.get("RCU_WATERMARK_PHRASES")
+    if phrases is not None:
+        # Empty disables only the strapline test; the wordmark filter is a
+        # separate decision and keeps whatever `watermark_filter` says.
+        cfg.ocr.watermark_phrases = tuple(
+            p for p in (re.sub(r"[^A-Z0-9]", "", t.upper())
+                        for t in phrases.split(",") if t.strip()) if p
+        )
 
 
 _apply_env_overrides(CFG)

@@ -524,6 +524,20 @@ def drop_watermark(regions: list[dict]) -> list[dict]:
     for r in regions:
         bare = re.sub(r"[^A-Z0-9]", "", r["text"].upper())
 
+        # The strapline first, because it is exempt from the height test that
+        # the rest of this function is built around -- it is small text, and
+        # its own length is what makes it safe. See `watermark_phrases`.
+        # Cyrillic is kept here and stripped by `bare`, deliberately: the
+        # wordmark test is defined on the A-Z0-9 form, and that form reduces a
+        # correctly-read Cyrillic strapline to the empty string.
+        phrase_bare = re.sub(r"[^0-9A-ZА-ЯЁ]", "", r["text"].upper())
+        if (cfg.watermark_phrases
+                and len(phrase_bare) >= cfg.watermark_phrase_min_len
+                and max(fuzz.partial_ratio(phrase_bare, p)
+                        for p in cfg.watermark_phrases)
+                >= cfg.watermark_phrase_min_similarity):
+            continue
+
         if len(bare) < cfg.watermark_min_len:
             kept.append(r)
             continue
