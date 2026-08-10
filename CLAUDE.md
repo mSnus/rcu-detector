@@ -423,6 +423,20 @@ These caused real bugs. Do not reintroduce them.
   has fewer buttons, costing 31 records with label recall above 0.20 instead
   of 1. Unlike the sparse test this one **can** empty a photograph, and on 8 of
   11473 it does; every one is a blister-card fragment or an LCD panel.
+- **Identical photographs in the catalogue are not necessarily a defect.**
+  123 `IRC_new_237*` records carry 123 distinct `model_id`s and 120
+  byte-identical files (md5 `03c9b990…`, 75150 bytes). That is correct data,
+  confirmed against the catalogue: IRC sells one physical universal remote
+  under a model number per brand code set, so the photograph really is the
+  same remote. Do not "clean up" duplicate hashes.
+  Two consequences, both permanent:
+  * Identical files decode identically and extract deterministically, so those
+    120 carry **identical fingerprints**. A query landing there is a 120-way
+    exact tie, and no detector work can break it — there is no information to
+    break it on. The honest answer is the *group*, not a pick from it.
+  * They will read as wrong answers in any recall measurement, at high scores.
+    Truth cannot be keyed on `model_id` alone, let alone the filename stem:
+    records sharing a source image are **all** correct answers.
 - Every crop of one photograph is the **same catalogue product**, because
   metadata joins on the photo stem. `HTR-U29A_0` and `_1` both carried
   `model_id 12257`. A second crop can never be labelled differently, so it is a

@@ -149,8 +149,22 @@ function to key on `model_id` before quoting a `medium` precision again.
    `rcu_queries.none_of_these`. It is visible again on `rcud` —
    `RCU_TRY_SIMPLE=false`, and the container was recreated so the flag actually
    took.
-2. ~~Read the 13 wrong `medium` answers~~ — done, above. What remains is keying
-   `calibrate_bands.py` truth on `model_id` rather than the filename stem.
+2. ~~Read the 13 wrong `medium` answers~~ — done, above. What remains is the
+   truth function in `calibrate_bands.py`, and it needs more than the
+   filename-stem fix that section asks for. **`model_id` is not enough
+   either.** 123 `IRC_new_237*` records hold 123 distinct `model_id`s and 120
+   byte-identical photographs — correct data, confirmed against the catalogue,
+   because IRC sells one physical remote under a model number per brand code
+   set. Those 120 have identical fingerprints and are a 120-way exact tie by
+   construction. Truth has to be an *equivalence class*: records sharing a
+   source image are all correct answers. Until it is, the calibration counts
+   119 correct answers as errors every time one of these is queried, and no
+   band figure quoted from it is trustworthy.
+
+   The same argument says the product should answer with the group — "an IRC
+   universal remote, one of these 120 models" — rather than picking one at a
+   high score. That is a UX decision, not a CV one; nothing in extraction or
+   matching can improve on a tie between identical inputs.
 3. **Plan 9.1 step 2** — hand-correct ~400 crops, then train. Draw the queue
    from the `rcud` catalogue, not the 21-record dev sample.
 4. Button drift between query and catalog: unchanged since session 5, measured
