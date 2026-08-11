@@ -1,12 +1,19 @@
-# numpy 2 is safe here and was checked rather than assumed. The 1.26.4 pin
-# arrived with the first commit and carried no reason; the only stated
-# constraint is rapidocr-onnxruntime 1.3.24's declared `numpy<2.0.0`, which is
-# a declaration and not a fact -- it runs fine, and its text output is
-# unchanged. Extracting six remotes under 1.26.4 and under 2.2.6, same OpenCV,
-# gave **byte-identical fingerprints and byte-identical crops**, and
-# verification is ~11% faster (3.27 ms -> 2.91 ms per candidate at 45
-# buttons). Retrieval unchanged: recall@1 8/8, separation +0.077.
-numpy==2.2.6
+# numpy 2 is SAFE but not currently INSTALLABLE, which are different things.
+#
+# Safe: the 1.26.4 pin arrived with the first commit carrying no reason, and
+# extracting six remotes under 1.26.4 and under 2.2.6 with the same OpenCV
+# gave byte-identical fingerprints and byte-identical crops, with verification
+# ~11% faster (3.27 ms -> 2.91 ms per candidate at 45 buttons) and retrieval
+# unchanged at recall@1 8/8, separation +0.077.
+#
+# Not installable: rapidocr-onnxruntime 1.3.24 declares `numpy<2.0.0`, and
+# although it is *installed* --no-deps by both the Dockerfile and install.sh,
+# it is also *listed* here -- because install.sh has no separate step for it --
+# so pip resolves its metadata anyway and the image build dies with
+# ResolutionImpossible. Bumping numpy therefore means restructuring how both
+# installers handle the OCR wrappers, which is a deliberate change and not a
+# side effect of a latency deploy. Left at 1.26.4 until then.
+numpy==1.26.4
 scipy==1.13.1
 # THE OPENCV VERSION CHANGES EXTRACTION. Do not let it drift, and never let
 # the full `opencv-python` build be installed alongside this one -- it shadows
