@@ -70,6 +70,47 @@ def buttons_of(fp: dict) -> list[dict]:
     return fp.get("buttons") or []
 
 
+def orphan_legends(fp: dict) -> int:
+    """Legends with no detected keycap under them.
+
+    OCR reads a legend whether or not detection found the key it is printed
+    on, so a legend-shaped text region with no button near it is direct
+    evidence of a missed button -- the one thing `extract_quality` cannot see.
+    `RC4849_0` scores 0.923 having lost 40% of its buttons; its orphan share is
+    0.24 against 0.06 for the same remote extracted properly.
+    """
+    from app.config import CFG
+    r, cap = CFG.label.max_assign_dist, CFG.label.caption_width_frac
+    bs = buttons_of(fp)
+    n = 0
+    for t in fp.get("text_regions") or []:
+        if t.get("w", 0.0) >= cap:
+            continue                      # a caption strip, not a legend
+        if not any(abs(b["x"] - t["x"]) < r and abs(b["y"] - t["y"]) < r
+                   for b in bs):
+            n += 1
+    return n
+
+
+def orphan_share(fp: dict) -> float:
+    o = orphan_legends(fp)
+    return o / max(1, len(buttons_of(fp)) + o)
+
+
+def is_printed_page(fp: dict) -> bool:
+    """A crop whose legends outnumber its keys is a page, not a remote.
+
+    `2098_1` is a VCR code table photographed beside the remote: 62 stored text
+    regions against 44 "buttons", and 50 orphan legends that are table rows.
+    It tops the orphan ranking and a labeller sent it would label nothing, so
+    it is excluded from the queue rather than allowed to crowd out real
+    detection failures. (That such crops are records at all is a separate
+    defect -- the density rule cannot see them because they are full-size.)
+    """
+    nb = len(buttons_of(fp))
+    return bool(nb) and len(fp.get("text_regions") or []) > nb
+
+
 def yolo_lines(fp: dict) -> list[str]:
     """One `class cx cy w h` line per button, all normalised to the crop.
 
@@ -111,6 +152,10 @@ def main() -> None:
                          "A high-quality score on 2 buttons usually means the "
                          "detector found the two it could see and missed the "
                          "rest, which is a false label, not a sparse remote.")
+    ap.add_argument("--queue-orphan-frac", type=float, default=0.5,
+                    help="fraction of the labelling queue drawn from the "
+                         "records with the most legends left with no keycap "
+                         "under them; the rest is stratified by quality")
     ap.add_argument("--split", choices=["all", "train", "hard"], default="all")
     ap.add_argument("--queue-size", type=int, default=400,
                     help="how many images to put in the labelling queue "
@@ -201,16 +246,36 @@ def main() -> None:
         # keycaps do not lower the quality score -- CAS-400_0 lost a whole
         # keypad at 0.91 -- so a queue drawn from the bottom of the range would
         # never show a labeller the failure the detector most needs corrected.
-        everything = trusted + hard
-        by_quality = sorted(everything, key=lambda t: quality_of(t[1]))
+        everything = [t for t in trusted + hard if not is_printed_page(t[1])]
+        n_pages = len(trusted) + len(hard) - len(everything)
 
-        # Stratified: walk the quality-ordered list at an even stride, so the
-        # queue spans the range instead of clustering at one end.
-        if args.queue_size and args.queue_size < len(by_quality):
-            stride = len(by_quality) / args.queue_size
-            picked = [by_quality[int(i * stride)] for i in range(args.queue_size)]
+        # Half the queue is the failure the detector exists to fix, half is a
+        # spread across the catalogue.
+        #
+        # Ordering by quality alone cannot find the first half: every one of
+        # the worst orphan records scores 0.81-0.95, because a missed keycap
+        # does not lower the quality score. `242254901404_0` is a black-on-black
+        # Philips with 22 buttons found and 21 legends left with no key under
+        # them, at quality 0.933 -- a labeller walking a quality-stratified
+        # queue would never be shown it.
+        #
+        # But not orphans alone either: a training set drawn entirely from one
+        # failure mode teaches the detector that mode and nothing else.
+        n_targeted = int(args.queue_size * args.queue_orphan_frac)
+        by_orphan = sorted(everything, key=lambda t: -orphan_share(t[1]))
+        targeted = by_orphan[:n_targeted]
+
+        rest = by_orphan[n_targeted:]
+        by_quality = sorted(rest, key=lambda t: quality_of(t[1]))
+        n_spread = max(0, args.queue_size - len(targeted))
+        if n_spread and n_spread < len(by_quality):
+            stride = len(by_quality) / n_spread
+            spread = [by_quality[int(i * stride)] for i in range(n_spread)]
         else:
-            picked = by_quality
+            spread = by_quality[:n_spread]
+        picked = targeted + spread
+        print(f"queue: {len(targeted)} by orphan legends, {len(spread)} "
+              f"stratified by quality, {n_pages} printed page(s) excluded")
 
         queue = []
         for p, fp in picked:
@@ -219,10 +284,12 @@ def main() -> None:
                 continue
             shutil.copyfile(crop, hard_dir / crop.name)
             queue.append(f"{crop.name}\t{quality_of(fp):.3f}\t"
-                         f"{len(buttons_of(fp))}")
+                         f"{len(buttons_of(fp))}\t{orphan_legends(fp)}\t"
+                         f"{orphan_share(fp):.3f}")
 
         (args.out / "hard_queue.tsv").write_text(
-            "image\tquality\tbuttons_found\n" + "\n".join(queue) + "\n"
+            "image\tquality\tbuttons_found\torphan_legends\torphan_share\n"
+            + "\n".join(queue) + "\n"
         )
         print(f"labelling queue: {len(queue)} images -> {hard_dir}")
         print(f"  spanning quality "
