@@ -293,6 +293,51 @@ a different question and needs uploads of remotes the catalogue does not hold.
 low). Roughly 30 would make it measurable, and only real `/try` traffic can
 supply them.
 
+## Plan 9.1: the labelling queue, aimed
+
+Built from the live catalogue rather than the 21-record dev sample, and aimed
+at the failure `extract_quality` cannot see.
+
+**The signal.** OCR reads a legend whether or not detection found the key it is
+printed on, so a legend-shaped text region with no button near it is direct
+evidence of a missed button. On the pair that exposed all this:
+
+```
+RC4875_0   50 buttons   3 orphan legends   share 0.06   quality 0.926
+RC4849_0   29 buttons   9 orphan legends   share 0.24   quality 0.923
+```
+
+Four times the signal where quality shows none. Over the catalogue the share
+runs p50 0.03, p90 0.12, p99 0.30 — and **the worst records score 0.81-0.95
+quality**, so a quality-stratified queue would never show a labeller one of
+them. `242254901404_0` is a black-on-black Philips: 22 buttons found, 21
+legends left with no key under them, quality 0.933.
+
+**One confound, and it is worth knowing separately.** The raw ranking is topped
+by crops that are printed pages — `2098_1` is a VCR code table photographed
+beside the remote, 62 text regions against 44 "buttons", 50 orphans that are
+all table rows. Excluded from the queue (a labeller would label nothing), but
+15 such crops are catalogue records, and the density rule cannot see them
+because they are full-size. That is a small residual defect class of its own.
+
+**The queue**, `work/dataset/` on `rcud`, 400 images / 48 MB:
+
+```
+200 by orphan share   (203 with share >= 0.20)
+200 stratified by quality
+2045 orphan legends to add, against 12313 buttons already boxed
+quality median 0.918, range 0.229-0.975
+```
+
+Half and half deliberately: a training set drawn entirely from one failure
+mode teaches the detector that mode and nothing else.
+
+**What is left is the part no tooling replaces** — `label_queue.py export`,
+correct the boxes in Label Studio, `label_queue.py import`, then train.
+`check_label_roundtrip.py` asserts a box survives the trip before anyone
+spends an afternoon on it. The project's own rule stands: do not train on the
+uncorrected pseudo-labels, however good the quality scores look.
+
 ## Next
 
 1. **Land the inherited work above.** Nothing else should start first.
