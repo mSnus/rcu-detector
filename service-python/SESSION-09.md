@@ -41,6 +41,35 @@ from 70 to ~62 would take ~225 of them, but that is the band where real
 legends start appearing — decide it with the boundary listing in front of you,
 not from the count.
 
+### `RCU_ASSUME_UPRIGHT` — deployed on `rcud`
+
+`.env` holds `RCU_ASSUME_UPRIGHT=1` and compose passes it to `rcu-service`
+only, so the catalogue build cannot see it. A/B on the live endpoint, best of
+two per photograph, container recreated between runs:
+
+```
+                    UPRIGHT=1     UPRIGHT=0
+2749                  5212 ms      14995 ms     -65%
+STV-22LED5-org        6818 ms       7316 ms      -7%
+Sherwood_TX-757      12832 ms      34224 ms     -63%
+3510                  3379 ms       8983 ms     -62%
+2750                 25558 ms      48378 ms     -47%
+TOTAL                53799 ms     113896 ms     -53%
+```
+
+Same top-1 and same band in both configurations on all five. The one that
+barely moved (`STV-22LED5-org`, -7%) is the case where geometry was already
+confident enough to skip the second pass, so there was nothing to save.
+
+`2750` stays slow at 25 s because it holds four bodies and stages 4-10 run per
+body. Bodies-per-photograph is the remaining latency lever and nothing has
+been done about it.
+
+**Also deployed:** `min_source_long_side` 600 -> 500 and `fuse.verify_top_m`
+25. The floor change affects uploads immediately; it adds no catalogue records
+until something re-extracts, and it admits 1222 photographs whose short side
+runs as low as 85px — watch that band in the review queue.
+
 ### Still to do: apply the image dedupe. `rcu:legacy-manifest` now collapses
 byte-identical photographs (253 groups, 842 photographs, 589 redundant), but
 the live catalogue was built before it. Nothing needs re-extracting — the
@@ -109,11 +138,25 @@ baseline                        28456 ms   (4 photographs, extraction only)
    never uploads and has stayed at 8/8 through two query-path defects. Then
    measure how often a real upload is genuinely upside down; that is the
    number the flag trades against.
-3. **Re-measure `verify_top_m` on the live catalogue.** 25 is set from eight
-   pairs over 21 records — a direction, not a calibration. Tier 1 ranked the
-   answer first six times of eight, sixth once, and sixteenth once
-   (`MR-18B_0_0`, whose partner extracts 4 buttons against 22). The floor is
-   set by the worst extraction in the catalogue, not the median.
+3. **Re-measure `verify_top_m` on the live catalogue — still open, and the
+   obvious route is a dead end.** 25 is set from eight pairs over 21 records.
+   Two attempts to calibrate it against the real catalogue both failed, and
+   the reasons are worth not repeating:
+
+   * *Pair records sharing a `model_id`.* Returns **zero** usable pairs:
+     metadata joins on the photo stem, so every same-`model_id` group is
+     crops of ONE photograph, which are not independent queries.
+   * *Pair `X.jpg` with `X_N.jpg`.* Produces 314 pairs and a terrifying
+     "48% of answers never retrieved" — which is an artefact, not a finding.
+     The heuristic is provably wrong: CLAUDE.md records that
+     `ROLSEN_RSF-3106RT.jpg` and `ROLSEN_RSF-3106RT_0.jpg` are **two
+     different remotes**. Most of that 48% is different products.
+
+   What is left is the direct A/B: run the same queries with `verify_top_m=0`
+   (verify everything) and with 25, and compare the top-1. Self-retrieval is
+   fine for that, because the question is whether the cut *changes the
+   answer*, not what the absolute recall is. A first attempt over 300 queries
+   × 5 settings exceeded ten minutes — sample smaller, or run it detached.
 4. **Decide OpenVINO.** It changes what is read, so it needs both paths and a
    full rebuild — schedule it alongside anything else that needs one.
 5. **Fix the truth function** in `calibrate_bands.py` before quoting a band
