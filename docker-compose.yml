@@ -13,6 +13,12 @@ services:
       RCU_FP_DIR: /data/work/fp
       RCU_WATERMARK_FILTER: ${RCU_WATERMARK_FILTER:-1}
       RCU_WATERMARK_TERMS: ${RCU_WATERMARK_TERMS:-PULTOVNET}
+      # Never consider the photograph upside down. Query path only -- the
+      # build runs in the `extract` service and keeps indexing records both
+      # ways up, so this cannot reach the catalogue. Costs a genuinely
+      # inverted upload, which returns nothing rather than the right answer;
+      # acceptable where the person can see their own photo and reshoot.
+      RCU_ASSUME_UPRIGHT: ${RCU_ASSUME_UPRIGHT:-0}
     volumes:
       - ./work:/data/work:ro
       - ${RCU_FILES_DIR:-./files}:/data/files:ro

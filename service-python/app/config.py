@@ -204,7 +204,21 @@ class NormalizeConfig:
     # real catalogue standard is ~303x1090. Requiring 600 on both sides rejects
     # 52 of the 62 usable images in the dev sample; requiring it on the long
     # side rejects all 75 thumbnails and none of them.
-    min_source_long_side: int = 600
+    #
+    # Lowered 600 -> 500. Measured over the 13762 catalogued photographs, that
+    # admits **1222** more (9%) and still refuses 1010. What comes in is
+    # narrow: short side median 210, minimum 85, e.g. 85x502, 91x513, 96x533.
+    # An 85px-wide body is rectified to `out_width` 400 -- a 4.7x upscale, the
+    # regime this floor exists to keep out -- so the extra records are the
+    # weakest in the catalogue, not merely smaller.
+    #
+    # What makes it survivable now and did not exist when 600 was chosen:
+    # `body.max_button_density` refuses a crop whose buttons are denser than
+    # its own pixels could resolve, which is the failure a too-small source
+    # actually produces. That is a backstop, not a guarantee -- it catches the
+    # crop that traces interpolation noise as 80 keycaps, not the one that
+    # traces 30. Watch the 500-599 band in the review queue after any rebuild.
+    min_source_long_side: int = 500
 
     # A crop is only turned upside down when the geometry is *sure*. The old
     # bar was `not ambiguous`, i.e. confidence >= 0.25, which is barely better
