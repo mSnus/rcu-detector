@@ -104,6 +104,74 @@ rather than trusting install ordering. `--no-deps` means nothing else would
 notice the full OpenCV build shadowing the headless one, and the OpenCV
 version changes every fingerprint.
 
+### `ocr_only_best` — deployed
+
+A query answers from one body and discards the rest, so only the winner's text
+is read. Deployed and measured on the live endpoint:
+
+```
+2749              2682 ms      Sherwood_TX-757   3843 ms     (2 bodies)
+STV-22LED5-org    3358         3510              1616
+2750              4194         <- 10810 before, four bodies
+TOTAL            15693 ms
+```
+
+Cumulative for the session: **113896 ms -> 15693 ms, -86%**, same answers
+throughout.
+
+Two bugs in it, both from one root, both found by checking rather than by
+symptom: a body's button count *falls* once it is read, because
+`suppress_text_detections` deletes detections that turned out to be printed
+words. So a selection made before OCR and one made after are not the same
+selection, and the query could be answered from a body whose text was never
+read — `MR-18B_0` came back with no labels, no brand, no model code, and
+nothing in the response said so. Both paths now rank on `n_detected`, the
+pre-suppression count, which is the only number that exists on both sides of
+the read.
+
+### Why a near-identical remote never reaches the candidate list
+
+Reported from the live site: a query matched item 12994 (`RC4875_0`) correctly,
+but item 11913 (`RC4849_0`) — the same physical remote, listed twice — never
+appeared among the candidates.
+
+Not the `verify_top_m` cut, which was the obvious suspect: `RC4849_0` is not
+in the 100 that tier 1 retrieves, so nothing downstream could have shown it.
+
+The two extractions of one remote:
+
+```
+RC4875_0 (12994)   detected 58 buttons -> 8 cut as text  -> 50
+RC4849_0 (11913)   detected 45         -> 16 cut         -> 29
+token overlap 55 shared of 679/477, Jaccard 0.050
+```
+
+Three fixes were tried on the retrieval side and **all of them fail**:
+
+* *Turning text suppression off* makes it worse — 45 buttons, and `RC4875_0`
+  stops being retrieved at all. The extra detections are row-shaped boxes, not
+  keycaps, and they generate tokens that are simply wrong.
+* *Loosening `keep_area_ratio`* 2.2 -> 0.7 moves the button count 29 -> 31 and
+  nothing else.
+* *`norm_exponent`*, the document-length normalisation, moves `RC4849_0`
+  between ranks 1585 and 1688 of 12050 across its entire range 0.0 to 1.0.
+
+Rank ~1600, not rank 101. There is no retrieval-side tuning that reaches it,
+because tokens are position-quantised buttons and 21 missing buttons are 21
+grid cells that emit nothing. **This is a detection problem and only plan 9.1
+addresses it.**
+
+Two things worth carrying:
+
+* The relationship is **asymmetric**. Querying with `RC4849` finds `RC4875` at
+  tier-1 rank 2; querying with `RC4875` never surfaces `RC4849`. A rich token
+  set covers a sparse one, not the reverse. So a user photographing this remote
+  gets the right answer — it is the sparse *catalogue record* that cannot be
+  found, and it would lose to nothing.
+* **`extract_quality` is blind to it.** `RC4849_0` scores 0.923 with label
+  recall 0.34, both healthy, on a record that lost 40% of its buttons. The
+  audit queue cannot surface this class, so nothing will report it.
+
 ### Still to do: apply the image dedupe. `rcu:legacy-manifest` now collapses
 byte-identical photographs (253 groups, 842 photographs, 589 redundant), but
 the live catalogue was built before it. Nothing needs re-extracting — the
