@@ -602,10 +602,17 @@ above.
   measured in session 9: worse than the tier-1 score it would replace, and
   recall@1 8/8 → 6/8 at `verify_top_m=5`. The reason generalises to any cheap
   proxy — see the docstring of `app/matching/prefilter.py`.
-- Do not `pip install` a rapidocr wrapper without `--no-deps`. Both declare
-  loose dependencies that pull `opencv-python` over the headless build and
-  `numpy` 2.x over the pinned 1.26.4, silently changing the numeric library
-  the whole catalogue was extracted under.
+- Do not `pip install` a rapidocr wrapper without `--no-deps`, and never let
+  the full **`opencv-python`** build into the venv. It installs alongside
+  `opencv-python-headless` and *shadows* it, and **the OpenCV version changes
+  extraction**: measured over six remotes, same numpy, 5.0.0.93 against
+  4.10.0.84 changed every fingerprint and six of seven button counts
+  (RM-L859-1 47 vs 50). Nothing announces it — `pip list` shows both, and
+  `import cv2` silently picks the newer. Check `cv2.__version__` before
+  believing any measurement taken on a box you have installed anything on.
+  (numpy is *not* like this: 1.26.4 and 2.2.6 give byte-identical
+  fingerprints, and 2.2.6 is ~11% faster on verification, so that pin was
+  moved on evidence.)
 - Do not write an empty YOLO label file for a crop nobody labelled. Empty does
   not mean "unknown", it means "entirely background", which is the most
   damaging sentence the dataset can contain. `label_queue.py import` skips and
