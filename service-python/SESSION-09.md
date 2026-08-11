@@ -70,6 +70,40 @@ been done about it.
 until something re-extracts, and it admits 1222 photographs whose short side
 runs as low as 85px — watch that band in the review queue.
 
+### numpy 2.2.6 — the largest single win, and it was not the one expected
+
+Bumping numpy looked like an 11% saving on verification. On the live endpoint,
+same five photographs, same best-of-two method:
+
+```
+                   numpy 1.26.4    numpy 2.2.6
+2749                   5212 ms        2515 ms
+STV-22LED5-org         6818           3267
+Sherwood_TX-757       12832           4957
+3510                   3379           1315
+2750                  25558          10810
+TOTAL                 53799 ms       22864 ms      -58%
+```
+
+Identical answers, identical scores to four decimals, identical bands. So the
+pipeline is far more numpy-bound than the verification profile suggested — the
+11% was measured on RANSAC alone, and the gain is spread across every array
+stage. Combined with `RCU_ASSUME_UPRIGHT`, `/try` is **113896 ms -> 22864 ms
+on this set, -80%**.
+
+What made it installable is a packaging change, not a version bump: pip
+resolves the metadata of everything *named* in a requirements file even when a
+later step installs it `--no-deps`, so `rapidocr-onnxruntime`'s declared
+`numpy<2.0.0` was constraining the pins from the listing alone. The two OCR
+wrappers now live in `requirements-ocr.txt`, installed `--no-deps` by the
+Dockerfile and by install.sh — which had no such step before, and is why they
+could not simply be deleted from `requirements.txt`.
+
+Both installers now **assert** the outcome (`cv2.__version__` starts `4.10.`)
+rather than trusting install ordering. `--no-deps` means nothing else would
+notice the full OpenCV build shadowing the headless one, and the OpenCV
+version changes every fingerprint.
+
 ### Still to do: apply the image dedupe. `rcu:legacy-manifest` now collapses
 byte-identical photographs (253 groups, 842 photographs, 589 redundant), but
 the live catalogue was built before it. Nothing needs re-extracting — the
