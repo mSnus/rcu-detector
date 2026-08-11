@@ -40,7 +40,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import CFG  # noqa: E402
-from scripts.query_drift import post_image, records_for  # noqa: E402
+from scripts.query_drift import (correct_answers, load_truth,  # noqa: E402
+                                 post_image, records_for)
 
 
 def band_of(top: float, margin: float, high_s: float, high_m: float,
@@ -81,6 +82,11 @@ def main() -> None:
     ap.add_argument("--manifest", type=Path, default=None,
                     help="paths relative to --photos, one per line")
     ap.add_argument("--fp", type=Path, required=True)
+    ap.add_argument("--truth", type=Path, default=None,
+                    help="record_id<TAB>model_id from `php artisan "
+                         "rcu:export-truth`. Without it a correct answer under "
+                         "a second filename counts as a miss, and every number "
+                         "printed below is a floor rather than a measurement.")
     ap.add_argument("--url", default="http://127.0.0.1:8600")
     ap.add_argument("--token", default=None)
     ap.add_argument("--timeout", type=float, default=180.0)
@@ -95,6 +101,13 @@ def main() -> None:
     args = ap.parse_args()
 
     fps = {p.stem: json.loads(p.read_text()) for p in sorted(args.fp.glob("*.json"))}
+    truth = load_truth(args.truth)
+    if truth:
+        print(f"truth: {len(truth)} record(s) in "
+              f"{len(set(truth.values()))} product group(s)")
+    else:
+        print("truth: NONE -- keyed on the filename stem, so a correct answer "
+              "under a second filename will count as a miss")
     if not fps:
         sys.exit(f"no fingerprints in {args.fp}")
 
@@ -120,7 +133,7 @@ def main() -> None:
         if not photo.is_file():
             skipped += 1
             continue
-        mine = records_for(photo.stem, fps)
+        mine = correct_answers(photo.stem, fps, truth)
         if not mine:
             # Extraction found no remote in this photograph, so there is
             # nothing it could correctly retrieve. Counted, never silent.

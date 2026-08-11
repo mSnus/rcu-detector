@@ -75,6 +75,43 @@ def records_for(stem: str, fps: dict[str, dict]) -> dict[str, dict]:
     return {k: v for k, v in fps.items() if pattern.match(k)}
 
 
+def load_truth(path: Path | None) -> dict[str, str]:
+    """record_id -> product key, from `php artisan rcu:export-truth`."""
+    if path is None:
+        return {}
+    out = {}
+    for line in path.read_text().splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 2 and parts[0] and parts[1]:
+            out[parts[0]] = parts[1]
+    return out
+
+
+def correct_answers(stem: str, fps: dict[str, dict],
+                    truth: dict[str, str]) -> set[str]:
+    """Every record_id that would be a correct answer for this photograph.
+
+    The photograph's own crops, plus every other record the catalogue says is
+    the same product. Without the second half the measurement punishes the
+    matcher for being right: the same remote is routinely catalogued twice
+    under two filenames, and one physical remote is listed once per TV brand
+    whose code set it carries. Ten of the thirteen "wrong" medium answers in
+    the session-7 calibration were the first case alone, which is why medium
+    read 78% when it was nearer 95%.
+
+    Falls back to the stem rule when no truth file is given, so the evaluators
+    still run without one -- but the number they print then is a floor, not a
+    measurement.
+    """
+    mine = set(records_for(stem, fps))
+    if not truth:
+        return mine
+    keys = {truth[r] for r in mine if r in truth}
+    if not keys:
+        return mine
+    return mine | {r for r, k in truth.items() if k in keys and r in fps}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--photos", type=Path, default=Path("../photos"))
