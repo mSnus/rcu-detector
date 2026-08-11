@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.config import CFG
+from app.matching import prefilter
 from app.matching.index import TokenIndex
 from app.matching.store import FingerprintStore
 from app.matching.tokens import (fingerprint_tokens, flip_fingerprint,
@@ -209,8 +210,17 @@ class Matcher:
 
         # --- 3. tier 2 + 4. fusion ----------------------------------------
         cfg = CFG.fuse
+
+        # Which candidates are worth fitting a transform to. Chosen before the
+        # store is touched, so the ones that are cut cost neither a read nor a
+        # RANSAC -- and RANSAC is 88% of a verification.
+        exempt = set(fast_ids) if cfg.prefilter_exempt_code_hits else set()
+        chosen = prefilter.choose({rid: t1 for rid, (t1, _) in best_hit.items()},
+                                  cfg.verify_top_m, keep=exempt)
+
         out: list[Candidate] = []
-        for rid, (t1, flipped) in best_hit.items():
+        for rid in chosen:
+            t1, flipped = best_hit[rid]
             c_fp = self.store.get(rid)
             if c_fp is None:
                 continue

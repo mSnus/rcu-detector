@@ -267,6 +267,13 @@ def query_is_ambiguous(fp: dict) -> bool:
     verify per candidate, and no memory at all -- which is the whole reason
     the index side is allowed to be selective and this side is not.
     """
+    # ...unless the deployment has decided upside-down photographs do not
+    # happen. Checked before everything else because it is a statement about
+    # the *input*, not about how much the extractor trusts itself: no
+    # confidence threshold can express "the user is holding the remote". See
+    # `CFG.ocr.assume_query_upright` for what it costs.
+    if CFG.ocr.assume_query_upright:
+        return False
     if CFG.index.index_both_orientations or not CFG.index.trust_query_orientation:
         return True
     conf = float(fp.get("stats", {}).get("orientation_conf", 0.0))

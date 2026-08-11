@@ -75,33 +75,72 @@ def affine_ransac(src: np.ndarray, dst: np.ndarray, thresh: float,
         M = fit_affine_lstsq(src, dst)
         return (M, np.ones(n, dtype=bool)) if M is not None else (None, empty)
 
-    s = src[samples]                                  # (k, 3, 2)
-    d = dst[samples]
-    A = np.concatenate([s, np.ones((len(s), 3, 1))], axis=2)   # (k, 3, 3)
-
-    # Drop near-degenerate (collinear) samples before solving. A keypad is a
-    # grid, so collinear triples are common rather than exceptional, and
-    # np.linalg.solve on a singular batch raises for the whole batch.
-    dets = np.linalg.det(A)
-    good = np.abs(dets) > 1e-8
-    A, d = A[good], d[good]
-    if len(A) == 0:
-        M = fit_affine_lstsq(src, dst)
-        return (M, np.ones(n, dtype=bool)) if M is not None else (None, empty)
-
-    try:
-        params = np.linalg.solve(A, d)                # (k, 3, 2)
-    except np.linalg.LinAlgError:
-        M = fit_affine_lstsq(src, dst)
-        return (M, np.ones(n, dtype=bool)) if M is not None else (None, empty)
-
     src_h = np.column_stack([src, np.ones(n)])        # (n, 3)
-    proj = np.einsum("ij,kjm->kim", src_h, params)    # (k, n, 2)
-    err = np.linalg.norm(proj - dst[None, :, :], axis=2)
-    counts = (err <= thresh).sum(axis=1)
 
-    best = int(np.argmax(counts))
-    mask = err[best] <= thresh
+    # Evaluate the samples in blocks, keeping the best consensus seen so far,
+    # and stop when the standard adaptive bound says more sampling cannot
+    # plausibly improve on it.
+    #
+    # Blocks rather than one iteration at a time because the whole point of
+    # this implementation is that it is vectorised: a Python loop per sample
+    # would cost more than the sampling it saves. And a *prefix* of the same
+    # seeded draw rather than a different draw, so the early-exit run and the
+    # full run agree exactly whenever the exit does not trigger -- the fixed
+    # seed exists so scores never wobble, and this must not undo it.
+    from app.config import CFG                        # local: keeps this
+    cfg = CFG.verify                                  # module importable alone
+    block = max(1, cfg.ransac_block) if cfg.ransac_adaptive else len(samples)
+    conf = min(max(cfg.ransac_confidence, 0.0), 1.0 - 1e-12)
+
+    best_count = -1
+    best_err = None
+    for start in range(0, len(samples), block):
+        chunk = samples[start:start + block]
+        s = src[chunk]                                # (k, 3, 2)
+        d = dst[chunk]
+        A = np.concatenate([s, np.ones((len(s), 3, 1))], axis=2)
+
+        # Drop near-degenerate (collinear) samples before solving. A keypad is
+        # a grid, so collinear triples are common rather than exceptional, and
+        # np.linalg.solve on a singular batch raises for the whole batch.
+        good = np.abs(np.linalg.det(A)) > 1e-8
+        A, d = A[good], d[good]
+        if len(A) == 0:
+            continue
+
+        try:
+            params = np.linalg.solve(A, d)            # (k, 3, 2)
+        except np.linalg.LinAlgError:
+            continue
+
+        proj = np.einsum("ij,kjm->kim", src_h, params)     # (k, n, 2)
+        err = np.linalg.norm(proj - dst[None, :, :], axis=2)
+        counts = (err <= thresh).sum(axis=1)
+
+        i = int(np.argmax(counts))
+        if counts[i] > best_count:
+            best_count = int(counts[i])
+            best_err = err[i]
+
+        if not cfg.ransac_adaptive or best_count < 3:
+            continue
+        # Standard bound: with an inlier ratio w, the chance that a minimal
+        # sample of 3 is all-inlier is w^3, so the iterations needed for
+        # `conf` certainty of having drawn one is log(1-conf)/log(1-w^3).
+        w = best_count / n
+        if w >= 1.0:
+            break
+        denom = np.log1p(-w ** 3)
+        if denom >= 0:
+            continue
+        if (start + block) >= np.log1p(-conf) / denom:
+            break
+
+    if best_err is None:
+        M = fit_affine_lstsq(src, dst)
+        return (M, np.ones(n, dtype=bool)) if M is not None else (None, empty)
+
+    mask = best_err <= thresh
     if mask.sum() < 3:
         return None, empty
 

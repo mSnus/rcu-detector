@@ -444,6 +444,28 @@ class OcrConfig:
     # both. About 4% of records fall below 0.75.
     query_text_orientation_below_conf: float = 0.75
 
+    # Assume the photograph is the right way up, and never spend anything on
+    # the possibility that it is not. Off by default; turn it on per
+    # deployment with RCU_ASSUME_UPRIGHT=1.
+    #
+    # This exists for `/try`, where a person points a phone at a remote they
+    # are holding. The prior there is overwhelming, and the cost of covering
+    # the alternative is paid twice: once here, in a second OCR pass over the
+    # flipped crop, and again in the matcher, where `query_is_ambiguous` makes
+    # `verify_pair` fit every candidate both ways up -- measured at 2.3x
+    # (3.27 ms -> 7.51 ms per candidate at 45 buttons).
+    #
+    # It is a service-level flag rather than a per-request one because the
+    # catalog build runs in a different process entirely: setting it on the
+    # service cannot reach `extract_one.py`, so records keep being indexed
+    # both ways up and only queries stop paying.
+    #
+    # What it costs: a genuinely upside-down upload returns nothing instead of
+    # the right answer. That is a worse failure than a slow answer, so measure
+    # how often it happens on real traffic before enabling it anywhere the
+    # photograph is not being taken by hand.
+    assume_query_upright: bool = False
+
     # --- source watermark suppression --------------------------------------
     # Catalogue images scraped from a site usually carry that site's watermark
     # stamped across the middle. It must be dropped *at the OCR boundary*, so
@@ -797,6 +819,42 @@ class VerifyConfig:
     # would hide small real changes in sampling noise.
     ransac_iters: int = 400
     ransac_seed: int = 12345
+    # Stop sampling once the standard adaptive bound says more samples cannot
+    # plausibly beat the consensus already found. RANSAC is 88% of a
+    # verification -- 2.89 ms of 3.27 at 45 buttons, measured after the
+    # vectorisation that made `_correspondences` stop being the hot spot the
+    # comment there still claims it is -- and `ransac_iters` is a fixed count
+    # that pins to 400 at 50+ correspondences however good the fit already is.
+    # A correct match reaches consensus in the first handful of samples.
+    #
+    # Determinism is preserved because every sample is still drawn from the
+    # same seeded sequence and consumed in order: early exit takes a *prefix*
+    # of the run it would otherwise have done, never a different draw. Blocks
+    # keep the vectorisation -- a per-iteration Python loop would cost more
+    # than the sampling it saves.
+    # OFF by default, and the measurement is the reason rather than caution.
+    # In isolation it is a real win -- 231 ms -> 133 ms over 192 pairs, 42% off
+    # RANSAC. But `fuse.verify_top_m` runs RANSAC 15 times per query instead of
+    # 100, and 42% of 15 fits is ~20 ms of a multi-second query. It buys
+    # almost nothing once the prefilter is in front of it.
+    #
+    # And it is not free. Evaluating in blocks changes results on its own,
+    # before any early exit: with the exit made unreachable, 1 pair in 192
+    # still moved, because `np.linalg.solve` on batches of 32 is not
+    # bit-identical to one batch of 400. With the exit live at 0.9999,
+    # 189/192 agree and the rest move by a single inlier -- which is ~0.012 of
+    # the fused score, enough to cross a band boundary.
+    #
+    # A fixed seed exists here so scores never wobble. Trading that for 20 ms
+    # is a bad trade, so this stays available and off. `ransac_adaptive=False`
+    # evaluates every sample in one block, which is exactly the original code
+    # path and bit-identical to it.
+    ransac_adaptive: bool = False
+    ransac_block: int = 32
+    # Confidence that a better consensus would have been found by now. High on
+    # purpose: inlier counts feed the fused score and therefore the confidence
+    # bands, so this must not trade score stability for milliseconds.
+    ransac_confidence: float = 0.9999
     # transform sanity. Both sides are already rectified, so the honest
     # transform is near identity. There is no perspective term to bound: the
     # verifier fits an affine, having found that every RANSAC estimator in
@@ -826,6 +884,30 @@ class FuseConfig:
     Calibrate the bands on a real test set. These are the plan's starting
     numbers and nothing has been measured against them yet.
     """
+    # Candidates actually handed to RANSAC, after the cheap geometric
+    # prefilter ranks the tier-1 shortlist. 0 disables the prefilter and
+    # verifies everything tier 1 returned, which is what happened until now.
+    #
+    # Verification is 22 ms per candidate on the deployment box and 100 of them
+    # are 22% of a query. Retrieval depth and verification depth are different
+    # questions that were the same number by accident: `index.top_n` controls
+    # how many records get a *look*, this controls how many get a *fit*.
+    #
+    # 25 rather than 15, and the difference is one record. Over the sample's
+    # eight known query/answer pairs, tier 1 ranks the answer first six times,
+    # sixth once, and **sixteenth** once -- `MR-18B_0_0`, whose partner
+    # extracts 4 buttons against its 22 and which is documented as a bad
+    # extraction. A cut at 15 loses it; the honest reading is that the floor
+    # is set by the worst extraction in the catalogue, not by the median.
+    #
+    # Re-measure on the live catalogue before tightening: eight pairs over 21
+    # records is a direction, not a calibration.
+    verify_top_m: int = 25
+    # Model-code hits skip the prefilter. The code path is near-100% precise,
+    # so a candidate that agrees on it has stronger evidence behind it than any
+    # geometric proxy, and must not be ranked out by one.
+    prefilter_exempt_code_hits: bool = True
+
     w_geometric: float = 0.55
     w_tier1: float = 0.25
     w_brand: float = 0.15
@@ -1003,6 +1085,14 @@ def _apply_env_overrides(cfg: Config) -> None:
         cfg.ocr.watermark_terms = tuple(t for t in cleaned if t)
         if not cfg.ocr.watermark_terms:
             cfg.ocr.watermark_filter = False
+
+    upright = os.environ.get("RCU_ASSUME_UPRIGHT")
+    if upright is not None:
+        # One switch, both places it is paid: the second OCR pass and the
+        # both-ways-up verification. Splitting them would let a deployment
+        # skip the expensive read and then pay for the fit anyway.
+        cfg.ocr.assume_query_upright = upright.strip().lower() not in {
+            "", "0", "false", "no", "off"}
 
     phrases = os.environ.get("RCU_WATERMARK_PHRASES")
     if phrases is not None:

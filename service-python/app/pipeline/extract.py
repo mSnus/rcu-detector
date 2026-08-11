@@ -78,6 +78,16 @@ def extract_remotes(img: np.ndarray, ensemble: bool = True,
         orient = resolve_orientation(crop, buttons)
         orient["source"] = "geometry"
 
+        # Assuming upright means assuming it, not reading it and then turning
+        # the crop over anyway. Geometry is confidently wrong often enough to
+        # matter -- `RM-PJ20_big_light` reads flipped at confidence 1.00 -- so
+        # leaving the verdict in place would flip a correctly-oriented photo
+        # and read it upside down, which is the one failure this whole switch
+        # is meant to stop paying for.
+        if fast_ocr and CFG.ocr.assume_query_upright:
+            orient = dict(orient, flip=False, ambiguous=False,
+                          confidence=1.0, source="assumed")
+
         regions: list[dict] = []
         suppressed: list[dict] = []
         brand = None
@@ -91,11 +101,18 @@ def extract_remotes(img: np.ndarray, ensemble: bool = True,
         # it when geometry is not confident: a wrong flip means the single pass
         # reads an upside-down crop, and brand and model code are lost for
         # good. See `query_text_orientation_below_conf`.
+        # `assume_query_upright` short-circuits all of it: a deployment that
+        # has decided upside-down photographs do not happen must not pay for
+        # the second pass on a low-confidence geometry verdict either, which is
+        # the branch that actually fires. It applies to the query path only --
+        # `fast_ocr` is False on the build, so the catalogue is unaffected and
+        # keeps resolving orientation from text at full upscale.
         text_orientation = use_ocr and (
             not fast_ocr
-            or CFG.ocr.query_both_orientations
-            or orient.get("confidence", 1.0)
-                < CFG.ocr.query_text_orientation_below_conf)
+            or (not CFG.ocr.assume_query_upright
+                and (CFG.ocr.query_both_orientations
+                     or orient.get("confidence", 1.0)
+                     < CFG.ocr.query_text_orientation_below_conf)))
 
         if text_orientation:
             # OCR both ways up before committing. Text is the strongest
