@@ -1,19 +1,15 @@
-# numpy 2 is SAFE but not currently INSTALLABLE, which are different things.
+# The 1.26.4 pin arrived with the first commit carrying no reason. Checked
+# rather than assumed before moving it: extracting six remotes under 1.26.4
+# and under 2.2.6, same OpenCV, gave **byte-identical fingerprints and
+# byte-identical crops**, verification is ~11% faster (3.27 ms -> 2.91 ms per
+# candidate at 45 buttons), and retrieval is unchanged at recall@1 8/8,
+# separation +0.077.
 #
-# Safe: the 1.26.4 pin arrived with the first commit carrying no reason, and
-# extracting six remotes under 1.26.4 and under 2.2.6 with the same OpenCV
-# gave byte-identical fingerprints and byte-identical crops, with verification
-# ~11% faster (3.27 ms -> 2.91 ms per candidate at 45 buttons) and retrieval
-# unchanged at recall@1 8/8, separation +0.077.
-#
-# Not installable: rapidocr-onnxruntime 1.3.24 declares `numpy<2.0.0`, and
-# although it is *installed* --no-deps by both the Dockerfile and install.sh,
-# it is also *listed* here -- because install.sh has no separate step for it --
-# so pip resolves its metadata anyway and the image build dies with
-# ResolutionImpossible. Bumping numpy therefore means restructuring how both
-# installers handle the OCR wrappers, which is a deliberate change and not a
-# side effect of a latency deploy. Left at 1.26.4 until then.
-numpy==1.26.4
+# It only became installable once the OCR wrappers moved to
+# requirements-ocr.txt: rapidocr-onnxruntime declares `numpy<2.0.0`, and pip
+# resolves the metadata of anything listed in a requirements file even when
+# something else installs it --no-deps later.
+numpy==2.2.6
 scipy==1.13.1
 # THE OPENCV VERSION CHANGES EXTRACTION. Do not let it drift, and never let
 # the full `opencv-python` build be installed alongside this one -- it shadows
@@ -32,10 +28,9 @@ Pillow==10.4.0
 # app/pipeline/ocr.py -- see OCR_EXTRA in install.sh to add paddle/easyocr/
 # doctr/tesseract for engine consensus on a larger machine.
 #
-# rapidocr-onnxruntime is installed --no-deps by install.sh: its dependency
-# list pulls opencv-python (the full build, needs libGL) which shadows the
-# headless build pinned above. Its real runtime deps are listed out here.
-rapidocr-onnxruntime==1.3.24
+# The wrappers themselves are NOT here -- see requirements-ocr.txt, which is
+# installed --no-deps. This file holds only what they really need at runtime,
+# which is pinned and resolvable.
 onnxruntime==1.23.2
 
 # The same PP-OCR models under OpenVINO. Installed alongside rather than
@@ -45,20 +40,8 @@ onnxruntime==1.23.2
 # the image is what allows the two to be A/B'd on the box that matters, which
 # is the only place the choice can honestly be made. Selected with
 # RCU_OCR_ENGINE=openvino; the default is unchanged.
-# Same --no-deps treatment as above, for the same opencv-python clash -- and
-# for a second reason found the hard way: rapidocr-openvino 1.4.4 declares a
-# bare `numpy`, so a plain install pulls numpy 2.2.6 over the 1.26.4 pinned at
-# the top of this file. That silently breaks rapidocr-onnxruntime's own
-# constraint and, worse, changes the numeric library the whole catalogue was
-# extracted under. Install both wrappers --no-deps; their real runtime deps
-# are the ones listed below.
+# The runtime, not the wrapper: rapidocr-openvino is in requirements-ocr.txt.
 openvino==2024.0.0
-# NOT `rapidocr-openvino` -- the wrapper is installed by the Dockerfile and
-# install.sh, both with --no-deps, and listing it here instead makes pip
-# resolve it *with* deps against the pins above. That is not a warning, it is
-# a hard build failure: its bare `numpy` against numpy==2.2.6 and its
-# opencv-python against opencv-python-headless is ResolutionImpossible, and
-# the image will not build at all.
 pyclipper==1.3.0.post6
 Shapely==2.0.5
 PyYAML==6.0.2

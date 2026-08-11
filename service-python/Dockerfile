@@ -16,19 +16,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /srv/service-python
 
-COPY requirements.txt ./
-# rapidocr-onnxruntime pulls opencv-python (needs libGL) and would shadow the
-# headless build pinned in requirements.txt, so it is installed without deps.
+COPY requirements.txt requirements-ocr.txt ./
+# Two files, and the split is load-bearing rather than tidiness: pip resolves
+# the metadata of everything named in a requirements file, so an OCR wrapper
+# listed there constrains the pins even when a later step installs it
+# --no-deps. That is what made numpy 2 un-installable. See requirements-ocr.txt.
 RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir --no-deps rapidocr-onnxruntime==1.3.24 \
-    && pip install --no-cache-dir --no-deps rapidocr-openvino==1.4.4 \
+    && pip install --no-cache-dir --no-deps -r requirements-ocr.txt \
     # Both OCR packages depend on the full opencv build. Whichever landed last
     # wins under the same `cv2` name, so put headless back on top explicitly --
     # install.sh does the same, and the Dockerfile was relying on ordering.
     && pip install --no-cache-dir --force-reinstall --no-deps \
          opencv-python-headless==4.10.0.84 \
+    # Assert what the pins are actually for. --no-deps means nothing else will
+    # notice a wrapper that needs a package we do not install, or an OpenCV
+    # quietly swapped for the full build -- and the OpenCV version changes
+    # every fingerprint, so it must not be discovered later.
     && python -c "from rapidocr_onnxruntime import RapidOCR; RapidOCR()" \
-    && python -c "from rapidocr_openvino import RapidOCR; RapidOCR()"
+    && python -c "from rapidocr_openvino import RapidOCR; RapidOCR()" \
+    && python -c "import cv2, numpy; \
+assert cv2.__version__.startswith('4.10.'), 'wrong OpenCV: ' + cv2.__version__; \
+print('built with OpenCV', cv2.__version__, 'numpy', numpy.__version__)"
 
 COPY app ./app
 COPY scripts ./scripts

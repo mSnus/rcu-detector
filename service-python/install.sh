@@ -51,12 +51,26 @@ say "Installing requirements.txt"
 "$PIP" install -q --upgrade pip
 "$PIP" install -q -r requirements.txt
 
-# rapidocr-onnxruntime depends on opencv-python (the full build, which wants
-# libGL). It installs over the headless build under the same `cv2` module
-# name, so whichever lands last wins. Force headless back on top.
+# The OCR wrappers are installed separately and WITHOUT their dependency
+# metadata, which is why they are not in requirements.txt: pip resolves
+# everything named in a requirements file, so listing them there constrains
+# the pins even though this step installs them --no-deps. Both declare the
+# full opencv-python, and one declares numpy<2.0.0. See requirements-ocr.txt.
+say "Installing the OCR wrappers (--no-deps, deliberately)"
+"$PIP" install -q --no-deps -r requirements-ocr.txt
+
+# Both OCR packages depend on the full opencv build, which installs over the
+# headless one under the same `cv2` module name -- whichever lands last wins.
+# Force headless back on top: the OpenCV version changes every fingerprint.
 say "Pinning opencv back to the headless build"
 "$PIP" uninstall -y -q opencv-python >/dev/null 2>&1 || true
 "$PIP" install -q --force-reinstall --no-deps opencv-python-headless==4.10.0.84
+
+# Assert it, rather than trusting the ordering above. --no-deps means nothing
+# else will notice if this drifts.
+"$VPY" -c "import cv2, numpy; \
+assert cv2.__version__.startswith('4.10.'), 'wrong OpenCV: ' + cv2.__version__; \
+print('  OpenCV', cv2.__version__, '/ numpy', numpy.__version__)"
 
 case "$OCR_EXTRA" in
     "")        ;;
