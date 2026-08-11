@@ -7,11 +7,12 @@ Read `docs/rcu-identifier-implementation-plan.md` for the full design, and
 `rcu-session-01/SESSION-01.md`, `service-python/SESSION-02.md`,
 `service-python/SESSION-03.md`, `service-python/SESSION-04.md`,
 `service-python/SESSION-05.md`, `service-python/SESSION-06.md`,
-`service-python/SESSION-07.md` and `service-python/SESSION-08.md` for status
-and known-bad behaviour. Session 08 is the current one. Session 04 corrects two
-claims session 03 made; session 05 retires the memory constraint that shaped
-sessions 03 and 04, so treat any `--ocr-width 800` advice in those two as
-historical.
+`service-python/SESSION-07.md`, `service-python/SESSION-08.md` and
+`service-python/SESSION-09.md` for status and known-bad behaviour. Session 09
+is the current one, and it opens with work session 08 left in flight — read its
+first section before starting anything. Session 04 corrects two claims session
+03 made; session 05 retires the memory constraint that shaped sessions 03 and
+04, so treat any `--ocr-width 800` advice in those two as historical.
 
 ## Approach
 
@@ -77,6 +78,13 @@ python scripts/check_label_roundtrip.py --fp ../work/fp --norm ../work/norm
 # the service (loopback only; Laravel calls it)
 RCU_INTERNAL_TOKEN=... RCU_INDEX_PATH=../work/index/tokens.npz \
     RCU_FP_DIR=../work/fp python -m app.main
+
+# ...and the query-path speed switches. Both are query-side only: the build
+# runs in another process and keeps indexing records both ways up.
+#   RCU_ASSUME_UPRIGHT=1     never consider the photo upside down (-62%)
+#   RCU_OCR_ENGINE=openvino  the same models, 35% faster -- but it reads MORE
+#                            text, so it changes fingerprints and needs both
+#                            paths rebuilt together. Not a query-only switch.
 ```
 
 ```bash
@@ -465,28 +473,39 @@ These caused real bugs. Do not reintroduce them.
   pre-fix nid keying still baked into an image built before the fix landed.
   `docker compose build laravel` before believing any number from `exec`.
 
-## Next up (session 8)
+## Next up (session 9)
+
+Read `service-python/SESSION-09.md`. It opens with three things session 8 left
+running, and they come before anything else:
+
+1. **A catalogue rebuild is in flight on `rcud`** (1964 photographs, ~11.2 s
+   each) covering the watermark-strapline filter and the frame-split fix. When
+   it lands, resync both consumers and verify `STV-22LED5-org`.
+2. **Then apply the image dedupe.** `rcu:legacy-manifest` now collapses
+   byte-identical photographs (589 redundant of 13763); the live catalogue was
+   built before it. Nothing needs re-extracting — the dedupe only removes.
+3. **Check the mixed hash groups before pruning.** Dedupe assumes every member
+   of a group is the same remote, and at least one group holds an unrelated
+   product on a placeholder image.
+
+Then the latency work. `/try` was ~7.1 s against a ~1 s budget; text is 72% of
+it and verification 22%. Shipped and measured at **-70%** on the query path
+(`RCU_ASSUME_UPRIGHT`, `fuse.verify_top_m`, OpenVINO), all of it query-side and
+none of it needing a rebuild. Two plausible ideas are recorded as *rejected by
+measurement* in `docs/plan-faster-queries.md` — removing the OCR bands, and a
+cheap geometric prefilter — do not rebuild either.
+
+## Previously (session 8, mostly complete)
 
 The catalogue is **complete and consistent**: 12079 fingerprints, 12079 catalog
 rows, 12211 index docs, both consumers in step. (Session 7 left 12311/12515;
 session 8 removed 232 records that were crops of scenery — see SESSION-08.md.)
-Session 7 rebuilt it end to end
-and fixed nine extraction defects found by reading overlays in the review
-queue; see `service-python/SESSION-07.md`, and `SESSION-08.md` for where the
-remaining errors are.
 
-Bands are calibrated for the first time, on 254 live uploads: recall@1 95%,
-`high` 100% precise over 195 queries, `medium` 78% over 59. `high` moved to
-0.65/0.10. `low` and `none` are still uncalibrated and self-retrieval cannot
-calibrate them -- the answer always exists.
-
-1. **Calibrate `low` and `none`** from real `/try` uploads of remotes that are
-   *not* in the catalogue. `rcu_queries.error` now separates an outage from a
-   verdict, so the data is trustworthy.
-2. **Read the 13 wrong `medium` answers** in `work/bands.csv` -- a population,
-   not an anecdote, and the cheapest lead on what the matcher gets wrong.
-3. **Plan 9.1 step 2** — hand-correct the label queue, then train. The tooling
-   is built and verified; an edge pass was measured and does not substitute.
+Bands are calibrated on 254 live uploads: recall@1 95%, `high` 100% precise
+over 195 queries, `medium` 78% over 59 — but that 78% is an artefact of the
+truth function, not the matcher, and is nearer 95%. `low` and `none` are still
+uncalibrated and self-retrieval cannot calibrate them: the answer always
+exists.
 
 ## Previously (session 7, complete)
 
@@ -574,6 +593,19 @@ above.
   extractions are still systematically incomplete (`CAS-400_0` loses a whole
   keypad at 0.91), and no automatic completeness test found works — both
   candidates fail on that same record. See `export_button_dataset.py`.
+- Do not remove or enlarge the OCR bands. Measured in session 9: 1400 is the
+  optimum in *both* directions (600 → 10181 ms, 1400 → 7261, whole → 8246),
+  and removing them also changes the text, so it costs a re-extraction to buy
+  a loss. The config's claim that bands preserve detection resolution is wrong
+  at `det_limit_type="min"` — the detector only ever upscales.
+- Do not build a cheap geometric prefilter in front of RANSAC. Built and
+  measured in session 9: worse than the tier-1 score it would replace, and
+  recall@1 8/8 → 6/8 at `verify_top_m=5`. The reason generalises to any cheap
+  proxy — see the docstring of `app/matching/prefilter.py`.
+- Do not `pip install` a rapidocr wrapper without `--no-deps`. Both declare
+  loose dependencies that pull `opencv-python` over the headless build and
+  `numpy` 2.x over the pinned 1.26.4, silently changing the numeric library
+  the whole catalogue was extracted under.
 - Do not write an empty YOLO label file for a crop nobody labelled. Empty does
   not mean "unknown", it means "entirely background", which is the most
   damaging sentence the dataset can contain. `label_queue.py import` skips and
