@@ -172,7 +172,27 @@ Two things worth carrying:
   recall 0.34, both healthy, on a record that lost 40% of its buttons. The
   audit queue cannot surface this class, so nothing will report it.
 
-### Still to do: apply the image dedupe. `rcu:legacy-manifest` now collapses
+### The image dedupe — applied
+
+```
+fp files 11656  =  catalog rows 11656  =  index_records 11656   (11792 docs)
+581 records pruned, from 560 photographs
+IRC_new_237 records: 123 -> 3
+```
+
+589 photographs in 253 groups collapsed, exactly as measured. The 120-way
+exact tie is gone with them: `IRC_new_237_1` used to return 0.9143 against a
+runner-up of 0.9143 and now returns **0.9047 against 0.7701**.
+
+Before pruning, the mixed-group check: 130 of 253 groups have every member
+sharing a model code, 95 share none, 28 have too few titles to judge. The 95
+are almost all the expected pattern -- one universal remote listed once per
+brand code set, so the titles name *different* codes by design. Two arguments
+settle the rest: every member of a group has the same photograph, so
+deduplication removes metadata rows and no visual information whatever; and
+the genuine errors it does hit (`IRC_new_1169`, "G0891CESA for Sharp DV-6311S"
+sitting on an IRC image) are records that answer *wrongly* today, so dropping
+them shrinks the wrong-answer surface rather than the catalogue's reach. `rcu:legacy-manifest` now collapses
 byte-identical photographs (253 groups, 842 photographs, 589 redundant), but
 the live catalogue was built before it. Nothing needs re-extracting — the
 dedupe only removes:

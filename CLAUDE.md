@@ -481,12 +481,12 @@ running, and they come before anything else:
 1. ~~A catalogue rebuild is in flight on `rcud`~~ — **done**. 12237
    fingerprints = 12237 catalog rows = 12237 index records, and the reported
    records verified live. Two traps it sprang are recorded in SESSION-09.
-2. **Apply the image dedupe.** `rcu:legacy-manifest` now collapses
-   byte-identical photographs (589 redundant of 13763); the live catalogue was
-   built before it. Nothing needs re-extracting — the dedupe only removes.
-3. **Check the mixed hash groups before pruning.** Dedupe assumes every member
-   of a group is the same remote, and at least one group holds an unrelated
-   product on a placeholder image.
+2. ~~Apply the image dedupe~~ — **done**. 581 records pruned from 560
+   photographs; 11656 fingerprints = 11656 rows = 11656 index records. The
+   120-way `IRC_new_237` tie is gone: 0.9143/0.9143 became 0.9047/0.7701.
+3. ~~Check the mixed hash groups~~ — done before pruning; 130 of 253 groups
+   share a model code across every member, and the 95 that do not are the
+   expected one-remote-per-brand-code-set pattern.
 
 Then the latency work. `/try` was ~7.1 s against a ~1 s budget; text is 72% of
 it and verification 22%. Shipped and measured at **-70%** on the query path
@@ -497,9 +497,10 @@ cheap geometric prefilter — do not rebuild either.
 
 ## Previously (session 8, mostly complete)
 
-The catalogue is **complete and consistent**: 12079 fingerprints, 12079 catalog
-rows, 12211 index docs, both consumers in step. (Session 7 left 12311/12515;
-session 8 removed 232 records that were crops of scenery — see SESSION-08.md.)
+The catalogue is **complete and consistent**: 11656 fingerprints, 11656 catalog
+rows, 11792 index docs, both consumers in step. (Session 7 left 12311/12515;
+session 8 removed crops of scenery, and session 9 the 581 duplicate-image
+records — see SESSION-08.md and SESSION-09.md.)
 
 Bands are calibrated on 254 live uploads: recall@1 95%, `high` 100% precise
 over 195 queries, `medium` 78% over 59 — but that 78% is an artefact of the
