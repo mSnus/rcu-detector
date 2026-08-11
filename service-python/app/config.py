@@ -958,16 +958,34 @@ class FuseConfig:
     # harder. The margin left is for that difference, not for the measurement.
     high_score: float = 0.65
     high_margin: float = 0.10
-    # `medium` measured 78% precise over 59 queries -- worth showing, not worth
-    # asserting. Unchanged for want of evidence to move it.
+    # `medium` measured 78% precise over 59 queries and it was never that bad:
+    # the truth function keyed on the filename stem, so a correct answer under
+    # a second filename counted as a miss. Re-run over 326 queries against the
+    # 11656-record catalogue with truth keyed on model_id
+    # (`rcu:export-truth`): **91% over 11 queries**. Small n now, because the
+    # same run puts 309 of 326 in `high` at 100% precision. Unchanged.
     medium_score: float = 0.50
-    # `low` and `none` remain uncalibrated and this run could not calibrate
-    # them: it queries the catalogue with its own photographs, so the right
-    # answer always exists. All 13 wrong answers scored above 0.50, and no
-    # floor between 0.10 and 0.50 rejected a single one. Calibrating these
-    # needs queries for remotes that are genuinely absent -- a real /try upload
-    # of a Supra STV-LC1504, not in the catalogue, scored 0.42.
-    low_score: float = 0.30
+    # Raised 0.30 -> 0.45 on the first measurement that could say anything.
+    # 326 queries, truth keyed on model_id, floor swept against the 7 wrong
+    # answers and the 321 correct ones:
+    #
+    #   floor   wrong rejected   correct lost
+    #    0.30        1 / 7            0
+    #    0.45        4 / 7            0
+    #    0.50        6 / 7            0
+    #
+    # Zero correct answers are lost anywhere up to 0.50, so this is not a
+    # trade -- it is slack that was being given away. 0.45 rather than the 0.50
+    # the data nominally allows, for the same reason `high` is not at 0.55:
+    # every query here is a catalogue photograph matched against itself and a
+    # phone photograph scores lower, so the gap is left for the difference
+    # between the measurement and the deployment, not for the measurement.
+    #
+    # This still is NOT a calibration of `none` against absent remotes, which
+    # is a different question and needs uploads of remotes the catalogue does
+    # not hold. `rcu_queries` has 4 marked `none_of_these` so far; ~30 would
+    # make it measurable.
+    low_score: float = 0.45
     # A tie in the top two scores is not a weak answer, it is two answers. Over
     # the 254-query calibration every single wrong answer was one: 13 of 13 had
     # a margin at or below 0.003, against a median margin of 0.321 for correct

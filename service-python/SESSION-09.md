@@ -252,6 +252,47 @@ baseline                        28456 ms   (4 photographs, extraction only)
 * **Tesseract, EAST + small CRNN.** The win in that family is the runtime, not
   the architecture — see `RapidOcrOpenvinoEngine`.
 
+## Bands, recalibrated on honest truth
+
+`rcu:export-truth` writes `record_id -> model_id` and `correct_answers()`
+unions a photograph's crops with every record the catalogue calls the same
+product. 326 queries against the 11656-record catalogue:
+
+```
+self-retrieval recall@1  319/326 (98%)
+separation               +0.407 mean over 321 queries
+high    n=309   precision 100%
+medium  n= 11   precision  91%      <- read 78% under the old truth
+low     n=  5   precision   0%
+none    n=  1   precision   0%
+```
+
+`medium` was never 78%: the truth function was keying on the filename stem, so
+a right answer under a second filename scored as a miss. It is 91%, on a much
+smaller n because 309 of 326 now land in `high` at 100%.
+
+**`low_score` 0.30 -> 0.45**, on the floor sweep against the 7 wrong answers
+and the 321 correct ones:
+
+```
+floor   wrong rejected   correct lost
+ 0.30        1 / 7            0
+ 0.45        4 / 7            0
+ 0.50        6 / 7            0
+```
+
+Zero correct answers are lost anywhere up to 0.50, so this was slack being
+given away rather than a trade. 0.45 rather than the 0.50 the data allows, for
+the same reason `high` sits at 0.65 and not 0.55: every query here is a
+catalogue photograph matched against itself, and a phone photograph scores
+lower. The gap is for the difference between measurement and deployment.
+
+**This is still not a calibration of `none` against absent remotes.** That is
+a different question and needs uploads of remotes the catalogue does not hold.
+`rcu_queries` holds 112 rows and **4** marked `none_of_these` (2 medium, 2
+low). Roughly 30 would make it measurable, and only real `/try` traffic can
+supply them.
+
 ## Next
 
 1. **Land the inherited work above.** Nothing else should start first.
