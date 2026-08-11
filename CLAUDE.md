@@ -478,10 +478,10 @@ These caused real bugs. Do not reintroduce them.
 Read `service-python/SESSION-09.md`. It opens with three things session 8 left
 running, and they come before anything else:
 
-1. **A catalogue rebuild is in flight on `rcud`** (1964 photographs, ~11.2 s
-   each) covering the watermark-strapline filter and the frame-split fix. When
-   it lands, resync both consumers and verify `STV-22LED5-org`.
-2. **Then apply the image dedupe.** `rcu:legacy-manifest` now collapses
+1. ~~A catalogue rebuild is in flight on `rcud`~~ — **done**. 12237
+   fingerprints = 12237 catalog rows = 12237 index records, and the reported
+   records verified live. Two traps it sprang are recorded in SESSION-09.
+2. **Apply the image dedupe.** `rcu:legacy-manifest` now collapses
    byte-identical photographs (589 redundant of 13763); the live catalogue was
    built before it. Nothing needs re-extracting — the dedupe only removes.
 3. **Check the mixed hash groups before pruning.** Dedupe assumes every member

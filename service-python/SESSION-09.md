@@ -3,22 +3,45 @@
 Session 8 was about the catalogue being *right*. This one is about a query
 being *fast*, plus the three things session 8 left in flight.
 
-## Inherited, in flight — finish these first
+## Inherited from session 8
 
-**A rebuild is running on `rcud`** and was at 1171 of 1964 photographs when
-session 8 closed, ~11.2 s each. It re-extracts everything touched by the
-watermark-strapline filter and the frame-split fix. When it lands:
+### The rebuild — done
 
-```bash
-cd /var/www/pult3_ru_usr/data/www/rcud
-# it runs build_index.py itself; then, on the host:
-DOCKER='sudo -n docker' ./docker/resync-catalog.sh
+1964 photographs re-extracted, no kills, both consumers resynced and in step:
+
+```
+fp files 12237  =  catalog rows 12237  =  index_records 12237   (12379 docs)
 ```
 
-Then verify `STV-22LED5-org` yields two records rather than one fused, and
-that no `IRC_new_237*` record still stores the strapline.
+Live through `/identify`, after rebuilding **`rcu-service`** as well:
 
-**Then apply the image dedupe.** `rcu:legacy-manifest` now collapses
+```
+STV-22LED5-org   -> STV-22LED5-org_0         high  0.7356 | next 0.4998
+RM-L810          -> RM-L810_0                high  1.3044 | next 0.9750   2 bodies
+SHIVAKI-STV-22LEDG9-1 -> ..._1               high  0.9184 | next 0.4669   3 bodies
+2750             -> 2750_0                   high  0.9118 | next 0.6108
+Sherwood_TX-757  -> Sherwood_TX-757_0        high  0.9168 | next 0.4096
+```
+
+**Two traps this cost, both already in CLAUDE.md and both sprung anyway:**
+
+* The `extract` image was rebuilt after the frame-split fix and `rcu-service`
+  was not, so the *query* path went on fusing the pairs — `RM-L810` came back
+  as `RM-L859-1_0` at high confidence, from one body of 82 buttons. Rebuild
+  **every** image that carries the code, not the one you were thinking about.
+* The affected-record set was selected with a hand-written fragment list
+  rather than with the filter's own score, so 129 photographs whose strapline
+  OCR'd too badly for the list were never re-extracted. Zero records *inside*
+  the rebuilt set failed the check; the residue was entirely outside it.
+  **Select the set to re-extract with the rule that does the filtering.**
+
+Strapline now: **0** regions at or above the threshold, from 130. 360 garbled
+fragments remain below it by design, on 351 records of 12237. Lowering the cut
+from 70 to ~62 would take ~225 of them, but that is the band where real
+legends start appearing — decide it with the boundary listing in front of you,
+not from the count.
+
+### Still to do: apply the image dedupe. `rcu:legacy-manifest` now collapses
 byte-identical photographs (253 groups, 842 photographs, 589 redundant), but
 the live catalogue was built before it. Nothing needs re-extracting — the
 dedupe only removes:
