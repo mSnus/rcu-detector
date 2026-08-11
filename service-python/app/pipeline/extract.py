@@ -46,16 +46,85 @@ class ExtractedRemote:
     # re-run body detection, which is the most expensive step here.
     mask: np.ndarray | None = field(default=None, repr=False)
     body_overlay: np.ndarray | None = field(default=None, repr=False)
+    # False when `ocr_only_best` skipped this body's text. Load-bearing, not
+    # informational: see select_query_body.
+    text_read: bool = True
+    # Buttons found by detection, BEFORE suppress_text_detections removed the
+    # ones that turned out to be printed words. This is what the query
+    # selection ranks on, and it exists because it is the only count available
+    # both before and after the text is read -- see select_query_body.
+    n_detected: int = 0
+
+
+def select_query_body(remotes: list[ExtractedRemote],
+                      src_shape) -> ExtractedRemote | None:
+    """The one body a query should be answered from.
+
+    Most buttons wins -- but only among bodies whose buttons their own pixels
+    could resolve. Photograph a remote lying on its instruction manual and the
+    page extracts more keycaps than the remote does (112 against 61 on
+    catalogue photo `2750`), so ranking on the raw count hands the query to the
+    leaflet.
+
+    Never returns nothing when given something: if every body is implausible
+    the best of them still answers, because "no remote found" is a worse lie
+    than a low-confidence match.
+
+    One definition, called by `/identify` and by `extract_remotes` itself when
+    it is deferring OCR to the winner -- those two must not be able to disagree
+    about which body won, or the query would be answered from a body whose text
+    was never read.
+    """
+    if not remotes:
+        return None
+
+    # If the reading was rationed, choose only among the bodies that were
+    # read. Re-deciding freely here would sometimes pick a different body from
+    # the one `extract_remotes` chose, and that body would have no text at all.
+    #
+    # The two selections differ because `suppress_text_detections` deletes
+    # buttons that turned out to be printed words, so a body's button count
+    # *falls* once it is read. Ranking read bodies (suppressed, lower) against
+    # unread ones (unsuppressed, higher) is not comparing like with like:
+    # `MR-18B_0` lost its winner that way and answered from a body whose text
+    # was never read -- no labels, no brand, no model code, silently.
+    read = [r for r in remotes if r.text_read]
+    if read and len(read) < len(remotes):
+        remotes = read
+
+    # Ranked on `n_detected`, never on the fingerprint's button count. The
+    # fingerprint's count is post-suppression and therefore only exists after
+    # the text has been read, so ranking on it would make this function answer
+    # differently depending on whether the reading had happened yet -- which is
+    # exactly the decision it is being asked to make. `n_detected` is the same
+    # number before and after, so the two agree by construction.
+    counts = {r.index: (r.n_detected or len(r.buttons)) for r in remotes}
+    dense = implausibly_dense(remotes, src_shape, counts=counts)
+    plausible = [r for r in remotes if r.index not in dense] or remotes
+    return max(plausible, key=lambda r: counts[r.index])
 
 
 def extract_remotes(img: np.ndarray, ensemble: bool = True,
                     use_ocr: bool = True,
                     consensus: bool = False,
-                    fast_ocr: bool = False) -> list[ExtractedRemote]:
+                    fast_ocr: bool = False,
+                    ocr_only_best: bool = False) -> list[ExtractedRemote]:
     """Detect every remote in `img` and fingerprint each one.
 
     `fast_ocr` selects the query path's OCR economy (one pass, lower upscale;
     see `OcrConfig.query_min_width`). The catalog build must leave it off.
+
+    `ocr_only_best` reads text on the winning body alone. A query answers from
+    one body and discards the rest, but stages 4-10 ran on every one of them --
+    on `2750`, four bodies at ~2.5 s of OCR each, of which three were thrown
+    away. Selection does not use text (see `select_query_body`: buttons and
+    area only), so deferring the read cannot change which body wins, and the
+    winner is read exactly as before.
+
+    The bodies that lose come back with buttons, geometry and a fingerprint,
+    but no text -- no labels, no brand, no model code. That is only sound
+    because the caller discards them; the catalog build must leave this off,
+    and does, since every crop it keeps becomes a record.
     """
     out: list[ExtractedRemote] = []
 
@@ -69,6 +138,9 @@ def extract_remotes(img: np.ndarray, ensemble: bool = True,
     bodies, mask = detect_bodies_with_mask(img)
     body_overlay = dbg.draw_bodies(img, bodies)
 
+    # --- pass 1: geometry only ------------------------------------------
+    # Everything that decides *which* body wins, and nothing that costs OCR.
+    geom = []
     for idx, body in enumerate(bodies):
         crop, _M, aspect = rectify(img, body["rect"])
 
@@ -87,6 +159,31 @@ def extract_remotes(img: np.ndarray, ensemble: bool = True,
         if fast_ocr and CFG.ocr.assume_query_upright:
             orient = dict(orient, flip=False, ambiguous=False,
                           confidence=1.0, source="assumed")
+
+        # A text-free fingerprint, built now because the selection reads
+        # `stats.n_buttons` and `body.area_frac` off it. Replaced below for
+        # whichever bodies go on to be read.
+        geom.append((idx, body, crop, buttons, aspect, orient,
+                     build_fingerprint(buttons, aspect, orient, [], None,
+                                       None, body)))
+
+    # Which bodies are worth reading. Everything, unless the caller has said
+    # it will use only one -- in which case `select_query_body` decides, on
+    # the same buttons-and-area rule the caller would have applied itself.
+    to_read = {idx for idx, *_ in geom}
+    if ocr_only_best and use_ocr and len(geom) > 1:
+        provisional = [ExtractedRemote(index=i, fingerprint=fp, crop=c,
+                                       buttons=b, aspect=a, orientation=o,
+                                       n_detected=len(b))
+                       for i, _body, c, b, a, o, fp in geom]
+        winner = select_query_body(provisional, img.shape[:2])
+        if winner is not None:
+            to_read = {winner.index}
+
+    # --- pass 2: read the text, on the bodies that earned it -------------
+    for idx, body, crop, buttons, aspect, orient, fp in geom:
+        read_this = use_ocr and idx in to_read
+        n_detected = len(buttons)          # before suppression, see the dataclass
 
         regions: list[dict] = []
         suppressed: list[dict] = []
@@ -107,7 +204,7 @@ def extract_remotes(img: np.ndarray, ensemble: bool = True,
         # the branch that actually fires. It applies to the query path only --
         # `fast_ocr` is False on the build, so the catalogue is unaffected and
         # keeps resolving orientation from text at full upscale.
-        text_orientation = use_ocr and (
+        text_orientation = read_this and (
             not fast_ocr
             or (not CFG.ocr.assume_query_upright
                 and (CFG.ocr.query_both_orientations
@@ -135,7 +232,7 @@ def extract_remotes(img: np.ndarray, ensemble: bool = True,
             # we keep and its regions need no re-mapping.
             if orient["flip"]:
                 crop = apply_flip(crop)
-            if use_ocr:
+            if read_this:
                 regions = run_ocr(crop, consensus=consensus,
                                   min_width=CFG.ocr.query_min_width)
 
@@ -146,22 +243,33 @@ def extract_remotes(img: np.ndarray, ensemble: bool = True,
         if orient["flip"]:
             buttons = flip_buttons(buttons, crop.shape)
 
-        if use_ocr:
+        if read_this:
             buttons, suppressed = suppress_text_detections(buttons, regions)
             assign_labels(buttons, regions)
             brand = find_brand(regions)
             model_code = find_model_code(regions, buttons, brand)
 
-        fp = build_fingerprint(buttons, aspect, orient, regions, brand,
-                               model_code, body)
+        # Rebuilt whenever anything above moved: the text, the suppression it
+        # drives, or the flip. A body that was neither read nor flipped keeps
+        # the text-free fingerprint pass 1 already built for it.
+        if read_this or orient["flip"]:
+            fp = build_fingerprint(buttons, aspect, orient, regions, brand,
+                                   model_code, body)
 
         out.append(ExtractedRemote(
             index=idx, fingerprint=fp, crop=crop, buttons=buttons,
             regions=regions, suppressed=suppressed, aspect=aspect,
             orientation=orient, brand=brand, model_code=model_code,
-            mask=mask, body_overlay=body_overlay))
+            mask=mask, body_overlay=body_overlay,
+            text_read=read_this or not use_ocr, n_detected=n_detected))
 
     return out
+
+
+def _density(n: int, remote: ExtractedRemote, src_shape) -> float:
+    px = (remote.fingerprint["body"]["area_frac"]
+          * float(src_shape[0] * src_shape[1]))
+    return n / (px / 1000.0) if px > 0 else 0.0
 
 
 def button_density(remote: ExtractedRemote, src_shape) -> float:
@@ -177,7 +285,8 @@ def button_density(remote: ExtractedRemote, src_shape) -> float:
     return len(remote.buttons) / (px / 1000.0) if px > 0 else 0.0
 
 
-def implausibly_dense(remotes: list[ExtractedRemote], src_shape) -> set[int]:
+def implausibly_dense(remotes: list[ExtractedRemote], src_shape,
+                      counts: dict[int, int] | None = None) -> set[int]:
     """Indices of bodies holding more buttons than their pixels can resolve.
 
     Takes the whole photograph, not one body, because half the verdict is
@@ -191,7 +300,9 @@ def implausibly_dense(remotes: list[ExtractedRemote], src_shape) -> set[int]:
     leaflet crops sit under it and are caught only by their siblings.
     """
     cfg = CFG.body
-    dens = {r.index: button_density(r, src_shape) for r in remotes}
+    dens = {r.index: (button_density(r, src_shape) if counts is None else
+                      _density(counts[r.index], r, src_shape))
+            for r in remotes}
     # Over the bodies that have buttons at all: one with none has density 0 and
     # would otherwise become the reference every other body is three times
     # denser than, turning one blank crop into a verdict on the photograph.
