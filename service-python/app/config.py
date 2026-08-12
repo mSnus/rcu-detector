@@ -986,6 +986,20 @@ class FuseConfig:
     # not hold. `rcu_queries` has 4 marked `none_of_these` so far; ~30 would
     # make it measurable.
     low_score: float = 0.45
+    # When `none` means "we do not have this remote" rather than "we could not
+    # read your photograph". The two are completely different messages to a
+    # user and shared one hint until a Technika/Classic DTV1 -- absent from a
+    # Russian catalogue, as most UK-market remotes are -- came back at 0.299
+    # with **extraction quality 0.943 and 21 buttons**, and was told to
+    # reshoot. Nothing was wrong with the photograph; the answer simply is not
+    # in the catalogue, and saying so is both true and actionable, where
+    # "try another photo" is neither.
+    #
+    # Deliberately generous: this only chooses the wording of a `none`, never
+    # whether it is `none`. A query below either bar keeps the reshoot advice,
+    # because a poor extraction genuinely might be the photograph's fault.
+    healthy_query_buttons: int = 8
+    healthy_query_quality: float = 0.60
     # A tie in the top two scores is not a weak answer, it is two answers. Over
     # the 254-query calibration every single wrong answer was one: 13 of 13 had
     # a margin at or below 0.003, against a median margin of 0.321 for correct

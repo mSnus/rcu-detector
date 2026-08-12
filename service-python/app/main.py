@@ -294,13 +294,26 @@ async def identify(image: UploadFile = File(...), top_k: int = 5,
         # is worth knowing about but never worth failing a request over.
         print(f"slow query {request_id}: {latency} ms")
 
+    # `none` with a healthy extraction is a statement about the catalogue, not
+    # about the photograph. Refined here rather than in `_band`, which sees the
+    # candidates but not the query -- the same reason `photograph_back` is
+    # applied by its caller.
+    hint = result.hint
+    if (result.confidence == "none" and remote is not None
+            and hint == "reshoot"
+            and remote.fingerprint["stats"]["n_buttons"]
+                >= CFG.fuse.healthy_query_buttons
+            and remote.fingerprint.get("extract_quality", 0.0)
+                >= CFG.fuse.healthy_query_quality):
+        hint = "not_in_catalog"
+
     return JSONResponse({
         "request_id": request_id,
         "confidence": result.confidence,
         "latency_ms": latency,
         "extracted": _extracted_summary(remote),
         "candidates": [c.as_dict() for c in result.candidates],
-        "hint": result.hint,
+        "hint": hint,
         "bodies_found": len(remotes),
         "retrieved": result.n_retrieved,
         "model_code_fast_path": result.fast_path,

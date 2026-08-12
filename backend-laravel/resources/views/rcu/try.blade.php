@@ -497,6 +497,12 @@ const HINTS = {
         + 'printed code — usually on the back, sometimes below the buttons.',
     reshoot: 'Try another photo: fill the frame with the remote, straight on, '
         + 'in even light and without a strong shadow beside it.',
+    // `none` on a photograph the extractor read perfectly well. Telling that
+    // user to reshoot is both wrong and useless: a Technika DTV1 came back at
+    // 0.299 from a crop scoring 0.943 with 21 buttons, and was blamed for the
+    // picture. The catalogue simply does not hold it.
+    not_in_catalog: 'We read your remote clearly, but nothing in the catalogue '
+        + 'matches it — we probably do not stock this one yet.',
     // Not a weak answer -- two answers. Every wrong result in the calibration
     // looked like this, and about a quarter of ties are the same remote listed
     // twice, which the grouping above already merges into one card.
