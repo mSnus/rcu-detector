@@ -338,6 +338,56 @@ correct the boxes in Label Studio, `label_queue.py import`, then train.
 spends an afternoon on it. The project's own rule stands: do not train on the
 uncorrected pseudo-labels, however good the quality scores look.
 
+## `none`, calibrated at last — without scraping anything
+
+An absent remote cannot be simulated by querying the catalogue with its own
+photograph, because the answer is always there. It can be simulated *exactly*
+by removing it: query with a record's fingerprint while excluding every record
+of the same product, and what comes back is the best answer available for a
+remote the matcher cannot hold. 400 queries:
+
+```
+best available score   p50 0.613   p90 0.957   max 1.257
+band reported          high 179 (45%)   medium 172   low 66   none 91
+```
+
+45% confident answers for remotes that are not there — which sounds fatal and
+is not, because of what those answers *are*:
+
+```
+same remote, a code in common            37     RS41C0 -> RS41CO
+sibling model, code differs by 1 char    55     RAV463 -> RAV462
+sibling model, code differs by 2         37     RC022-02R -> RC022-01R
+same family, differs by 3-4              16
+unrelated code                           21     <- 5% of 400
+no comparable code in either title       13
+```
+
+129 of 179 are the same remote or a part number one or two characters away —
+physically near-identical hardware, and for a shop selling replacements often
+the right thing to offer. The genuinely unrelated answers are **21 of 400,
+about 5%**, and several of those are rebadges too (`SANYO MXAE` ->
+`EIKI MXAF`, two projector remotes; `Digifors HD73` -> `Iconbit Movie T2`, two
+generic DVB-T2 handsets).
+
+**So the failure is not identification, it is presentation.** Faced with an
+absent remote the matcher finds its nearest sibling and says `high`. That is
+the correct retrieval result and the wrong thing to *say*. A floor cannot fix
+it: rejecting everything up to 0.65 would still only reject 55% of absent
+remotes, and would cost real answers, since `high` is 100% precise when the
+answer is present.
+
+What works is the opposite of a floor — say what was actually found. The
+`not_in_catalog` hint added this session is the first half; the second is that
+a `high` answer whose model code disagrees with the query's is a *sibling*,
+and the UI should offer it as "closest we stock" rather than as the remote.
+
+**Real absent-remote uploads remain worth collecting**, for the one thing this
+cannot test: a phone photograph rather than a catalogue photograph. The two
+data points so far both behave: a Supra STV-LC1504 at 0.42, and a Technika
+DTV1 at 0.299 — the latter from a crop scoring 0.943, correctly `none`, and
+the case that produced the hint fix above.
+
 ## Next
 
 1. **Land the inherited work above.** Nothing else should start first.
