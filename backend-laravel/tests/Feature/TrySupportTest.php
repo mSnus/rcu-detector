@@ -191,4 +191,34 @@ class TrySupportTest extends TestCase
         $this->assertNull($req->delivery_error);
         $this->assertNotNull($req->emailed_at);
     }
+
+    /**
+     * A storage failure must not cost the name and telephone number. Found
+     * live: the support volume was created root-owned, Flysystem threw
+     * UnableToCreateDirectory straight through the disk's `throw => false`,
+     * and the customer got a 500.
+     */
+    public function test_a_storage_failure_does_not_fail_the_request(): void
+    {
+        Mail::fake();
+        $this->query();
+
+        // A root that cannot be a directory, because it is a file. Same shape
+        // as the live failure: the write throws from inside Flysystem.
+        $file = tempnam(sys_get_temp_dir(), 'rcu');
+        config([
+            'filesystems.disks.broken' => [
+                'driver' => 'local', 'root' => $file, 'throw' => true,
+            ],
+            'rcu.support.disk' => 'broken',
+        ]);
+
+        $this->postJson('/try/support',
+            ['request_id' => 'req-1', 'name' => 'A', 'phone' => 'B'])->assertOk();
+
+        $req = RcuSupportRequest::firstOrFail();
+        $this->assertNull($req->image_path);
+        $this->assertSame('A', $req->name);       // the part that matters
+        @unlink($file);
+    }
 }

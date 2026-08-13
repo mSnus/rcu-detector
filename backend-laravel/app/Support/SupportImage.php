@@ -33,29 +33,39 @@ class SupportImage
             return null;
         }
 
-        $from = Storage::disk(config('rcu.upload_disk'));
-        if (! $from->exists($uploadPath)) {
-            return null;
-        }
-
-        $max = (int) config('rcu.support.max_side', 2000);
-        $name = date('Y/m/') . Str::uuid()->toString() . '.jpg';
-        $disk = Storage::disk(config('rcu.support.disk'));
-
+        // The whole thing is guarded, including resolving the disk.
+        //
+        // That is not defensiveness by the yard: `Storage::disk()` is where
+        // the live failure actually threw. LocalFilesystemAdapter creates its
+        // root directory in the *constructor*, so a root-owned volume raises
+        // UnableToCreateDirectory before any of this code runs -- past the
+        // disk's `throw => false`, and past a try/catch wrapped around the
+        // write. The customer got a 500 for it.
+        //
+        // Nothing about the photograph may fail the request. The name and the
+        // telephone number are the part that has to survive.
         try {
+            $from = Storage::disk(config('rcu.upload_disk'));
+            if (! $from->exists($uploadPath)) {
+                return null;
+            }
+
+            $max = (int) config('rcu.support.max_side', 2000);
+            $name = date('Y/m/') . Str::uuid()->toString() . '.jpg';
+            $disk = Storage::disk(config('rcu.support.disk'));
+
             $raw = $from->get($uploadPath);
-            $out = self::downscale($raw, $max);
+            // Falling back to the original bytes rather than to nothing: an
+            // oversized photograph reaching support beats no photograph at
+            // all, which is the whole point of the form.
+            $out = self::downscale($raw, $max) ?? $raw;
+
+            return $disk->put($name, $out) ? $name : null;
         } catch (\Throwable $e) {
             report($e);
-            $out = null;
+
+            return null;
         }
-
-        // Falling back to the original bytes rather than to nothing: an
-        // oversized photograph reaching support beats no photograph at all,
-        // which is the whole point of the form.
-        $disk->put($name, $out ?? ($raw ?? ''));
-
-        return $name;
     }
 
     /**

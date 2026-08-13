@@ -25,8 +25,15 @@ COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-interaction
 
 COPY . .
+# storage/app/rcu/support_requests is created here, owned by www-data, even
+# though a named volume is mounted over it. That is exactly why: Docker seeds
+# an empty named volume from whatever the image has at that path, *including
+# ownership*, and creates it root-owned when the path does not exist. PHP runs
+# as www-data, so without this the first support request fails with
+# "Unable to create a directory" -- which is how it was found.
 RUN mkdir -p storage/framework/cache storage/framework/sessions \
              storage/framework/views storage/logs bootstrap/cache \
+             storage/app/rcu/support_requests \
     && composer dump-autoload --optimize --no-dev \
     && chown -R www-data:www-data storage bootstrap/cache
 
