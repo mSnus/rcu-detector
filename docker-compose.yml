@@ -83,9 +83,34 @@ services:
       # counts, record ids, and the feedback buttons that depend on them.
       # Presentation only -- the API returns the same payload either way.
       RCU_TRY_SIMPLE: ${RCU_TRY_SIMPLE:-false}
+      # The support form on /try. Compose injects only what is listed here --
+      # putting a variable in .env alone does not reach the container, which is
+      # how RCU_TRY_SIMPLE once sat in .env for a day while printenv disagreed.
+      #
+      # Without an address the request is still written and the row says
+      # `mail:no-address-configured`; without a working MAIL_MAILER it says
+      # `mail:not-delivered-transport-is-log`. Neither loses the customer.
+      RCU_SUPPORT_FORM: ${RCU_SUPPORT_FORM:-true}
+      RCU_SUPPORT_EMAIL: ${RCU_SUPPORT_EMAIL:-}
+      RCU_SUPPORT_API_URL: ${RCU_SUPPORT_API_URL:-}
+      RCU_SUPPORT_API_TOKEN: ${RCU_SUPPORT_API_TOKEN:-}
+      # Laravel's default mailer is `log`, which delivers nothing. Set these
+      # to actually send: MAIL_MAILER=smtp plus host/port/username/password.
+      MAIL_MAILER: ${MAIL_MAILER:-log}
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_SCHEME: ${MAIL_SCHEME:-}
+      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-no-reply@pultov.net}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-RCU}
     volumes:
       - ./work:/data/work:ro
       - ${RCU_FILES_DIR:-./files}:/data/files:ro
+      # Support requests: a customer's name, telephone number and photograph.
+      # A named volume of its own, NOT inside laravel-storage, so that a
+      # rebuild or a storage reset cannot take the queue with it.
+      - laravel-support:/srv/app/storage/app/rcu/support_requests
       - laravel-storage:/srv/app/storage
       # The host's MySQL socket directory, so the legacy catalogue can be read
       # without opening that database to TCP. Inert unless LEGACY_DB_SOCKET is
@@ -158,5 +183,6 @@ networks:
         - subnet: 172.28.0.0/16
 
 volumes:
+  laravel-support:
   mysql-data:
   laravel-storage:
