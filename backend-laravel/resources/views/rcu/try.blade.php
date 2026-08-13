@@ -123,49 +123,53 @@
         .stats code { color: var(--ink); }
     
 /* --- support form ------------------------------------------------------ */
-/* Deliberately not styled as an afterthought: on a `none` answer this form is
-   the only useful thing on the page, so it has to read as the next step and
-   not as small print. */
+/* Uses the page's own variables rather than inventing any. The first version
+   invented `--card` and `--bg` fallbacks, which do not exist here: the
+   fallbacks won, painting a near-white panel under the page's light `--ink`
+   text. Light grey on white, and unreadable. */
 .support {
-    margin-top: 1.5rem;
-    padding: 1rem;
-    border: 1px solid var(--line, #d0d0d0);
+    margin-top: 18px;
+    padding: 14px;
+    background: var(--panel);
+    border: 1px solid var(--line);
     border-radius: 10px;
-    background: var(--card, #fafafa);
 }
-.support-intro { margin: 0 0 .9rem; line-height: 1.45; }
+.support-intro { margin: 0 0 12px; line-height: 1.45; color: var(--ink); }
 .support label {
     display: block;
-    margin-bottom: .7rem;
-    font-size: .95rem;
+    margin-bottom: 10px;
+    font-size: .92rem;
+    color: var(--ink);
 }
 .support input {
     display: block;
     width: 100%;
     box-sizing: border-box;
-    margin-top: .25rem;
-    padding: .6rem .7rem;
-    font-size: 1rem;          /* 16px: anything smaller makes iOS zoom on focus */
-    border: 1px solid var(--line, #c8c8c8);
-    border-radius: 8px;
-    background: var(--bg, #fff);
-    color: inherit;
+    margin-top: 5px;
+    padding: 10px 11px;
+    /* 16px exactly: anything smaller and iOS zooms the page on focus. */
+    font: 16px/1.2 inherit;
+    background: #30363d;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 6px;
 }
+.support input::placeholder { color: var(--dim); }
+.support input:focus { outline: 2px solid #388bfd; outline-offset: 1px; }
 .support button {
     width: 100%;
-    padding: .75rem 1rem;
-    font-size: 1rem;
-    font-weight: 600;
-    border: 0;
-    border-radius: 8px;
-    background: #1769c4;
+    padding: 12px 16px;
+    font: 600 1rem/1 inherit;
+    background: #238636;
     color: #fff;
+    border: 1px solid #238636;
+    border-radius: 8px;
     cursor: pointer;
 }
 .support button:disabled { opacity: .55; cursor: default; }
-.support-note { margin: .8rem 0 0; font-size: .85rem; color: #666; line-height: 1.4; }
-.support-note.err { color: #b3261e; }
-.support-done { margin: 0 0 .6rem; font-weight: 600; }
+.support-note { margin: 12px 0 0; font-size: .85rem; color: var(--dim); line-height: 1.45; }
+.support-note.err { color: #f85149; }
+.support-done { margin: 0 0 8px; font-weight: 600; color: var(--ink); }
 </style>
 </head>
 <body>
