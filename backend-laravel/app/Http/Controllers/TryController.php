@@ -2,8 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\SupportRequestMail;
 use App\Models\RcuFingerprint;
+use App\Models\RcuQuery;
+use App\Models\RcuSupportRequest;
+use App\Support\SupportGateway;
+use App\Support\SupportImage;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\View\View;
 
 /**
@@ -35,6 +43,7 @@ class TryController extends Controller
             'maxUploadKb' => (int) config('rcu.max_upload_kb'),
             'catalogSize' => RcuFingerprint::count(),
             'simple' => (bool) config('rcu.try_simple'),
+            'supportForm' => (bool) config('rcu.support.enabled'),
         ]);
     }
 
@@ -65,5 +74,77 @@ class TryController extends Controller
             'Content-Type' => 'image/jpeg',
             'Cache-Control' => 'private, max-age=300',
         ]);
+    }
+
+    /**
+     * "Have a person look at this."
+     *
+     * Offered whatever the matcher said. `high` is 100% precise when the
+     * remote is in the catalogue, but when it is absent the matcher returns
+     * the nearest sibling at high confidence about 45% of the time, and the
+     * customer has no way to tell those two apart. So the way to reach a human
+     * is not gated on the band.
+     *
+     * The photograph is taken from the query that was already uploaded, never
+     * re-uploaded: it is on the server already, and asking a phone to send a
+     * ten-megabyte photograph twice on a mobile connection is the kind of
+     * thing that loses the request.
+     *
+     * Written first, delivered second, and the outcome of delivery recorded on
+     * the row. Neither the e-mail nor the upstream API may fail the request:
+     * the customer has given a name and a telephone number, and that is the
+     * part that must survive.
+     */
+    public function support(Request $request): JsonResponse
+    {
+        $this->guard();
+        abort_unless((bool) config('rcu.support.enabled'), 404);
+
+        $data = $request->validate([
+            'request_id' => ['nullable', 'string', 'max:64'],
+            'name' => ['required', 'string', 'max:120'],
+            'phone' => ['required', 'string', 'max:64'],
+        ]);
+
+        $query = ! empty($data['request_id'])
+            ? RcuQuery::where('request_id', $data['request_id'])->first()
+            : null;
+
+        $top = $query?->top_record_id;
+
+        $req = RcuSupportRequest::create([
+            'request_id' => $data['request_id'] ?? null,
+            'name' => trim($data['name']),
+            'phone' => trim($data['phone']),
+            'image_path' => SupportImage::store($query?->upload_path),
+            'confidence' => $query?->confidence,
+            'top_record_id' => $top,
+            'top_title' => $top
+                ? RcuFingerprint::where('record_id', $top)->value('title')
+                : null,
+        ]);
+
+        $to = config('rcu.support.email');
+        if ($to) {
+            try {
+                Mail::to($to)->send(new SupportRequestMail($req));
+                $req->emailed_at = now();
+            } catch (\Throwable $e) {
+                report($e);
+                $req->delivery_error = trim(($req->delivery_error ?? '')
+                    . ' mail:' . substr($e->getMessage(), 0, 120));
+            }
+        } else {
+            $req->delivery_error = trim(($req->delivery_error ?? '')
+                . ' mail:no-address-configured');
+        }
+
+        if (SupportGateway::forward($req)) {
+            $req->forwarded_at = now();
+        }
+
+        $req->save();
+
+        return response()->json(['ok' => true, 'id' => $req->id]);
     }
 }

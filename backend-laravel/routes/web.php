@@ -24,6 +24,13 @@ Route::get('/try', [TryController::class, 'index'])->name('rcu.try');
 Route::get('/try/photo/{recordId}', [TryController::class, 'photo'])
     ->where('recordId', '[A-Za-z0-9._-]+')->name('rcu.try.photo');
 
+// "Have a person look at this." Unauthenticated like the rest of /try, and
+// gated on the same flag, so a box without the test page has no endpoint that
+// writes rows either. Throttled because it is a public write: the page is for
+// dev boxes, and a public write with no ceiling is how one becomes a mailer.
+Route::post('/try/support', [TryController::class, 'support'])
+    ->middleware('throttle:10,1')->name('rcu.try.support');
+
 /*
 | Session login.
 |

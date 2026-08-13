@@ -55,6 +55,26 @@ return [
             'report' => false,
         ],
 
+        /*
+         * Support requests raised from /try. A separate disk from `rcu`
+         * because the two have different lifetimes: query uploads are a
+         * prunable log, and a customer asking to be called back is not. A
+         * prune of one must not be able to reach the other.
+         *
+         * `throw` is false here and true above, deliberately. A storage
+         * failure while writing a query upload should fail the request; a
+         * storage failure while writing the support copy should not lose the
+         * name and telephone number, which are the part that matters.
+         */
+        'rcu_support' => [
+            'driver' => 'local',
+            'root' => env('RCU_SUPPORT_ROOT',
+                storage_path('app/rcu/support_requests')),
+            'serve' => false,
+            'throw' => false,
+            'report' => true,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

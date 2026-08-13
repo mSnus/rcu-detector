@@ -3,6 +3,9 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    {{-- The support form posts to a web route, so it needs the token. The
+         identify calls above it are API routes and do not. --}}
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Identify a remote</title>
     <style>
         /* Same palette as the admin visualiser, laid out for a phone held in
@@ -118,7 +121,52 @@
         .ok { color: var(--high); }
         .stats { font-size: 12px; color: var(--dim); margin-top: 8px; }
         .stats code { color: var(--ink); }
-    </style>
+    
+/* --- support form ------------------------------------------------------ */
+/* Deliberately not styled as an afterthought: on a `none` answer this form is
+   the only useful thing on the page, so it has to read as the next step and
+   not as small print. */
+.support {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    border: 1px solid var(--line, #d0d0d0);
+    border-radius: 10px;
+    background: var(--card, #fafafa);
+}
+.support-intro { margin: 0 0 .9rem; line-height: 1.45; }
+.support label {
+    display: block;
+    margin-bottom: .7rem;
+    font-size: .95rem;
+}
+.support input {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: .25rem;
+    padding: .6rem .7rem;
+    font-size: 1rem;          /* 16px: anything smaller makes iOS zoom on focus */
+    border: 1px solid var(--line, #c8c8c8);
+    border-radius: 8px;
+    background: var(--bg, #fff);
+    color: inherit;
+}
+.support button {
+    width: 100%;
+    padding: .75rem 1rem;
+    font-size: 1rem;
+    font-weight: 600;
+    border: 0;
+    border-radius: 8px;
+    background: #1769c4;
+    color: #fff;
+    cursor: pointer;
+}
+.support button:disabled { opacity: .55; cursor: default; }
+.support-note { margin: .8rem 0 0; font-size: .85rem; color: #666; line-height: 1.4; }
+.support-note.err { color: #b3261e; }
+.support-done { margin: 0 0 .6rem; font-weight: 600; }
+</style>
 </head>
 <body>
 
@@ -180,6 +228,8 @@ const MAX_KB = @json($maxUploadKb);
 /* Presentation only -- the API returns the same payload either way. See
    `try_simple` in config/rcu.php for what is hidden and why. */
 const SIMPLE = @json($simple);
+const SUPPORT_FORM = @json($supportForm);
+const CSRF = document.querySelector('meta[name="csrf-token"]').content;
 /* A path, not an absolute URL. Behind a TLS-terminating proxy Laravel builds
    absolute URLs with the scheme it thinks it is serving, which is http unless
    TrustProxies is configured for that proxy -- and every one of these images
@@ -376,21 +426,113 @@ function render(data) {
 
     if (!cands.length) {
         box.innerHTML = '<p>No candidates. Nothing in the catalog resembles this.</p>'
-            + feedbackOnlyButton();
+            + feedbackOnlyButton() + supportFormHtml(band, data.request_id);
         box.hidden = false;
         wireFeedback();
+        wireSupport();
         return;
     }
 
-    box.innerHTML = groupByModel(cands).map((g, i) =>
-        // The heading goes before the second group, not above a section that
-        // may be empty: with one candidate there is nothing else possible and
-        // an "Also possible:" with nothing under it reads as a failure to load.
-        (i === 1 ? '<div class="also">Also possible:</div>' : '') + renderGroup(g, i === 0)
-    ).join('') + feedbackOnlyButton();
+    // The best match only. Showing a ranked list invites the reader to do the
+    // matcher's job from thumbnails, which they cannot: the runners-up are
+    // frequently sibling models differing by one character in the part number,
+    // and picking between those by eye is worse than not offering the choice.
+    // The way to resolve a doubtful answer is the support form below, not a
+    // longer list.
+    const best = groupByModel(cands)[0];
+
+    box.innerHTML = renderGroup(best, true) + feedbackOnlyButton()
+        + supportFormHtml(band, data.request_id);
 
     box.hidden = false;
     wireFeedback();
+    wireSupport();
+}
+
+/* The way to reach a person.
+ *
+ * Offered whatever the band says, with only the wording changing. `high` is
+ * 100% precise when the remote is in the catalogue -- but when it is absent
+ * the matcher returns the nearest sibling at high confidence about 45% of the
+ * time, and the customer cannot tell those apart from the answer alone. So
+ * "we are sure" is never a reason to withhold the form; it only changes what
+ * the sentence above it says.
+ */
+function supportFormHtml(band, requestId) {
+    if (!SUPPORT_FORM) return '';
+
+    const sure = band === 'high';
+    const intro = sure
+        ? 'Автоматика может ошибаться. Советуем позвонить нам перед заказом '
+          + 'или отправить это фото в нашу службу поддержки'
+        : 'Точных совпадений не найдено. Отправьте это фото в службу поддержки';
+
+    return `
+<form class="support" id="support-form" novalidate>
+  <p class="support-intro">${esc(intro)}</p>
+  <input type="hidden" name="request_id" value="${esc(requestId || '')}">
+  <label>Ваше имя:
+    <input type="text" name="name" autocomplete="name" maxlength="120" required>
+  </label>
+  <label>Телефон для связи:
+    <input type="tel" name="phone" autocomplete="tel" maxlength="64" required>
+  </label>
+  <button type="submit">Отправить</button>
+  <p class="support-note" id="support-note">Обычно мы отвечаем в течение
+    нескольких часов, но при большой загруженности ответ может занять до 1 дня</p>
+</form>`;
+}
+
+function wireSupport() {
+    const form = document.getElementById('support-form');
+    if (!form) return;
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const note = document.getElementById('support-note');
+        const button = form.querySelector('button');
+        const name = form.name.value.trim();
+        const phone = form.phone.value.trim();
+
+        if (!name || !phone) {
+            note.textContent = 'Заполните имя и телефон.';
+            note.className = 'support-note err';
+            return;
+        }
+
+        // Disabled for the whole round trip: a second tap on a slow connection
+        // is how one request becomes three, and this endpoint writes a row and
+        // sends an e-mail.
+        button.disabled = true;
+        note.textContent = 'Отправляем…';
+        note.className = 'support-note';
+
+        try {
+            const body = new FormData();
+            body.append('request_id', form.request_id.value);
+            body.append('name', name);
+            body.append('phone', phone);
+
+            const res = await fetch('{{ route('rcu.try.support') }}', {
+                method: 'POST',
+                headers: {'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json'},
+                body,
+            });
+
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+
+            form.innerHTML = '<p class="support-done">Спасибо! Заявка принята — '
+                + 'мы свяжемся с вами по указанному телефону.</p>'
+                + '<p class="support-note">Обычно мы отвечаем в течение '
+                + 'нескольких часов, но при большой загруженности ответ может '
+                + 'занять до 1 дня</p>';
+        } catch (err) {
+            button.disabled = false;
+            note.textContent = 'Не удалось отправить. Попробуйте ещё раз или '
+                + 'позвоните нам.';
+            note.className = 'support-note err';
+        }
+    });
 }
 
 /* One remote can be in the catalogue several times over -- an original and a

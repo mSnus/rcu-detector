@@ -175,4 +175,42 @@ return [
         'item_url' => env('RCU_ITEM_URL', 'https://pultov.net/item/{id}'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Support requests raised from /try
+    |--------------------------------------------------------------------------
+    |
+    | A person asking a human to identify their remote. Offered whatever the
+    | matcher said: `high` is 100% precise when the remote is in the catalogue,
+    | but when it is absent the matcher returns the nearest sibling at high
+    | confidence about 45% of the time, and the customer cannot tell those
+    | apart. Neither band is a reason to withhold a way of reaching a person.
+    |
+    | `email` and `api_url` are deliberately unset by default. Until they are
+    | configured the request is still written to the database and the failure
+    | to deliver is recorded on the row -- a request that did not reach anyone
+    | must be visible as one, never missing.
+    */
+    'support' => [
+        'enabled' => (bool) env('RCU_SUPPORT_FORM', true),
+
+        // Where the form is delivered. Unset -> stored only, and said so.
+        'email' => env('RCU_SUPPORT_EMAIL'),
+
+        // The upstream ticket API. Same treatment.
+        'api_url' => env('RCU_SUPPORT_API_URL'),
+        'api_token' => env('RCU_SUPPORT_API_TOKEN'),
+        'api_timeout' => (int) env('RCU_SUPPORT_API_TIMEOUT', 10),
+
+        // Where the downscaled copy lives. A separate disk from the query
+        // uploads because the two have different lifetimes: query uploads are
+        // a prunable log, a customer's support request is not.
+        'disk' => env('RCU_SUPPORT_DISK', 'rcu_support'),
+
+        // Longest side of the stored copy. Support gets a photograph they can
+        // look at, not a 40 MP original.
+        'max_side' => (int) env('RCU_SUPPORT_MAX_SIDE', 2000),
+        'jpeg_quality' => (int) env('RCU_SUPPORT_JPEG_QUALITY', 85),
+    ],
+
 ];
