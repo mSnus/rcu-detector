@@ -55,7 +55,8 @@ class TrySupportTest extends TestCase
     public function test_it_stores_the_request_and_mails_support(): void
     {
         Mail::fake();
-        config(['rcu.support.email' => 'support@example.com']);
+        config(['rcu.support.email' => 'support@example.com',
+                'mail.default' => 'smtp']);
         $this->query();
 
         $this->postJson('/try/support', [
@@ -143,5 +144,51 @@ class TrySupportTest extends TestCase
     public function test_downscale_leaves_a_small_image_alone(): void
     {
         $this->assertNull(SupportImage::downscale($this->jpeg(800, 600), 2000));
+    }
+
+    /**
+     * The trap this guards: `Mail::send()` succeeds on the `log` mailer, so a
+     * naive implementation stamps emailed_at for a message nobody received.
+     * rcud runs on `log` today -- MAIL_MAILER is unset and the container has
+     * no sendmail -- so this is the live configuration, not a hypothetical.
+     */
+    public function test_a_non_delivering_mailer_is_not_recorded_as_delivered(): void
+    {
+        Mail::fake();
+        config(['rcu.support.email' => 'support@example.com',
+                'mail.default' => 'log']);
+        $this->query();
+
+        $this->postJson('/try/support',
+            ['request_id' => 'req-1', 'name' => 'A', 'phone' => 'B'])->assertOk();
+
+        $req = RcuSupportRequest::firstOrFail();
+        $this->assertNull($req->emailed_at);
+        $this->assertStringContainsString('not-delivered-transport-is-log',
+            (string) $req->delivery_error);
+        // Still handed to the mailer: on `log` that is how you read what
+        // would have been sent.
+        Mail::assertSent(SupportRequestMail::class);
+    }
+
+    /**
+     * No API URL is a decision not yet taken, not a failure. It must leave
+     * nothing on delivery_error, or the column stops being useful for
+     * spotting the requests that genuinely did go wrong.
+     */
+    public function test_an_unconfigured_api_is_skipped_silently(): void
+    {
+        Mail::fake();
+        config(['rcu.support.email' => 'support@example.com',
+                'rcu.support.api_url' => null, 'mail.default' => 'smtp']);
+        $this->query();
+
+        $this->postJson('/try/support',
+            ['request_id' => 'req-1', 'name' => 'A', 'phone' => 'B'])->assertOk();
+
+        $req = RcuSupportRequest::firstOrFail();
+        $this->assertNull($req->forwarded_at);
+        $this->assertNull($req->delivery_error);
+        $this->assertNotNull($req->emailed_at);
     }
 }

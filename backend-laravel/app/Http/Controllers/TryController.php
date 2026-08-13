@@ -125,18 +125,34 @@ class TryController extends Controller
         ]);
 
         $to = config('rcu.support.email');
-        if ($to) {
+
+        // `log`, `array` and `null` are not delivery. Mail::send() returns
+        // perfectly happily on all three, so stamping emailed_at from a
+        // successful call would record a message that nobody received -- the
+        // exact shape of silent failure this project keeps finding. The
+        // message is still handed to the mailer, because on `log` that is
+        // how you read what would have been sent; only the claim to have
+        // delivered it is withheld.
+        $transport = (string) config('mail.default');
+        $delivers = ! in_array($transport, ['log', 'array', 'null'], true);
+
+        if (! $to) {
+            $req->delivery_error = trim(($req->delivery_error ?? '')
+                . ' mail:no-address-configured');
+        } else {
             try {
                 Mail::to($to)->send(new SupportRequestMail($req));
-                $req->emailed_at = now();
+                if ($delivers) {
+                    $req->emailed_at = now();
+                } else {
+                    $req->delivery_error = trim(($req->delivery_error ?? '')
+                        . " mail:not-delivered-transport-is-{$transport}");
+                }
             } catch (\Throwable $e) {
                 report($e);
                 $req->delivery_error = trim(($req->delivery_error ?? '')
                     . ' mail:' . substr($e->getMessage(), 0, 120));
             }
-        } else {
-            $req->delivery_error = trim(($req->delivery_error ?? '')
-                . ' mail:no-address-configured');
         }
 
         if (SupportGateway::forward($req)) {

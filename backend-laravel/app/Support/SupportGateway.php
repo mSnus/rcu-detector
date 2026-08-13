@@ -20,10 +20,19 @@ class SupportGateway
     /** True when the request was accepted upstream. */
     public static function forward(RcuSupportRequest $req): bool
     {
+        // No URL configured: skip silently and leave nothing on the row.
+        // This is not a delivery failure -- there is nowhere to deliver to
+        // yet, which is a decision not yet taken rather than something that
+        // went wrong, and marking every request with an error for it would
+        // make the column useless for spotting the ones that did go wrong.
         $url = config('rcu.support.api_url');
         if (! $url) {
             return false;
         }
+
+        // A token is optional. Some endpoints authenticate by URL alone, and
+        // refusing to post without one would be this app inventing a
+        // requirement the API has not stated.
 
         try {
             $http = Http::timeout((int) config('rcu.support.api_timeout', 10));
