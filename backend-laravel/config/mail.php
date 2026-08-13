@@ -47,6 +47,23 @@ return [
             'password' => env('MAIL_PASSWORD'),
             'timeout' => null,
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
+
+            /*
+             * Passed through to Symfony's EsmtpTransportFactory, which reads
+             * `verify_peer` off the DSN options.
+             *
+             * Defaults to true and must stay that way. It is set false on rcud
+             * for one specific reason: the mail server is on the same machine,
+             * reached over the Docker bridge at host.docker.internal, and it
+             * presents a self-signed certificate (CN=etc, O=Companyname,
+             * emailAddress=support@site.com -- a vendor placeholder). The hop
+             * never leaves the host, so there is no network to intercept.
+             *
+             * Do NOT set this false for a mail server reached over the
+             * internet. There it is the only thing standing between the
+             * mailbox password and anyone on the path.
+             */
+            'verify_peer' => env('MAIL_VERIFY_PEER', true),
         ],
 
         'ses' => [

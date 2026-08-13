@@ -102,6 +102,10 @@ services:
       MAIL_USERNAME: ${MAIL_USERNAME:-}
       MAIL_PASSWORD: ${MAIL_PASSWORD:-}
       MAIL_SCHEME: ${MAIL_SCHEME:-}
+      # Only for a mail server on this same host reached over the Docker
+      # bridge, where the hop never leaves the machine. Never for one reached
+      # over the internet. See config/mail.php.
+      MAIL_VERIFY_PEER: ${MAIL_VERIFY_PEER:-true}
       MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-no-reply@pultov.net}
       MAIL_FROM_NAME: ${MAIL_FROM_NAME:-RCU}
     volumes:
